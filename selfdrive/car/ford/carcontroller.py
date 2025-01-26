@@ -78,6 +78,12 @@ class CarController(CarControllerBase):
       else:
         apply_curvature = 0.
 
+      steeringPressed = CS.out.steeringPressed
+      steeringAngleDeg = CS.out.steeringAngleDeg
+
+      if steeringPressed and abs(steeringAngleDeg) > 30:
+        apply_curvature = 0
+
       self.apply_curvature_last = apply_curvature
 
       if self.CP.flags & FordFlags.CANFD:
