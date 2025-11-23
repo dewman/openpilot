@@ -70,8 +70,8 @@ class DRIVER_MONITOR_SETTINGS:
     self._RECOVERY_FACTOR_MAX = 5.  # relative to minus step change
     self._RECOVERY_FACTOR_MIN = 1.25  # relative to minus step change
 
-    self._MAX_TERMINAL_ALERTS = 3  # not allowed to engage after 3 terminal alerts
-    self._MAX_TERMINAL_DURATION = int(30 / self._DT_DMON)  # not allowed to engage after 30s of terminal alerts
+    self._MAX_TERMINAL_ALERTS = 30  # not allowed to engage after 3 terminal alerts
+    self._MAX_TERMINAL_DURATION = int(300 / self._DT_DMON)  # not allowed to engage after 30s of terminal alerts
 
 class DistractedType:
   NOT_DISTRACTED = 0
@@ -214,6 +214,7 @@ class DriverMonitoring:
 
   def _get_distracted_types(self):
     distracted_types = []
+    return distracted_types
 
     if not self.pose.calibrated:
       pitch_error = self.pose.pitch - self.settings._PITCH_NATURAL_OFFSET
