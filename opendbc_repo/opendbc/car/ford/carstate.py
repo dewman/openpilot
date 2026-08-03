@@ -144,7 +144,7 @@ class CarState(CarStateBase, MadsCarState, CarStateExt):
     ret.doorOpen = any([cp.vl["BodyInfo_3_FD1"]["DrStatDrv_B_Actl"], cp.vl["BodyInfo_3_FD1"]["DrStatPsngr_B_Actl"],
                         cp.vl["BodyInfo_3_FD1"]["DrStatRl_B_Actl"], cp.vl["BodyInfo_3_FD1"]["DrStatRr_B_Actl"]])
     # ret.seatbeltUnlatched = cp.vl["RCMStatusMessage2_FD1"]["FirstRowBuckleDriver"] == 2
-    ret.seatbeltUnlatched = false
+    ret.seatbeltUnlatched = False
 
     # blindspot sensors
     if self.CP.enableBsm:
