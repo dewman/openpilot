@@ -267,7 +267,8 @@ class DriverMonitoring:
     self.phone_prob = driver_data.phoneProb
 
     self._get_distracted_types()
-    self.driver_distracted = any(self.distracted_types.values()) and driver_data.faceProb > self.settings._FACE_THRESHOLD and self.pose.low_std
+    # self.driver_distracted = any(self.distracted_types.values()) and driver_data.faceProb > self.settings._FACE_THRESHOLD and self.pose.low_std
+    self.driver_distracted = false
     self.driver_distraction_filter.update(self.driver_distracted)
 
     # only update offsetter when driver is actively driving the car above a certain speed
