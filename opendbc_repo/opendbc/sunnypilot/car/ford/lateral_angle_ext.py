@@ -112,6 +112,8 @@ _STALL_MAX_BLIPS = 3         # give up on a stuck episode; devLim telemetry keep
 # the PSCM while the car is straight and the command is small -- a 300 ms lateral gap right at
 # hand-off, imperceptible, instead of a missed curve. The reactive detector above stays as backstop.
 _PRESS_BLIP_MIN_S = 0.5      # press must last this long before its release earns a pulse
+# The pulse releases steering for 300 ms; never fire it in a curve.
+_BLIP_MAX_PATH_ANGLE = 0.10  # rad
 
 
 def pscm_d_ref_m(v_ego_ms: float) -> float:
@@ -189,7 +191,7 @@ class LateralAngleExt:
       for attr, key, min_value, max_value in (
         ("low_speed_curv_factor", "FordLowSpeedFactor_ang", 0.5, 1.5),
         ("high_speed_curv_factor", "FordHighSpeedFactor_ang", 0.5, 1.5),
-        ("user_dampening_factor", "FordHighSpeedDampening_ang", 0.75, 1.25),
+        ("user_dampening_factor", "FordHighSpeedDampening_ang", 0.25, 1.25),
       ):
         try:
           raw = params.get(key, return_default=True)
@@ -311,7 +313,8 @@ class LateralAngleExt:
       self.press_timer_s += _STEER_DT
     else:
       if (self.press_timer_s >= _PRESS_BLIP_MIN_S and self.stall_blip_cooldown_s <= 0.0
-          and self.stall_blip_frames_left <= 0):
+          and self.stall_blip_frames_left <= 0
+          and abs(self.path_angle_last) < _BLIP_MAX_PATH_ANGLE):
         self.stall_blip_frames_left = _STALL_BLIP_FRAMES
       self.press_timer_s = 0.0
 
@@ -550,7 +553,8 @@ class LateralAngleExt:
     if _stalled:
       if self.bp_curvature_deviation_limited and self.stall_blip_cooldown_s <= 0.0:
         self.stall_blip_hold_s += _STEER_DT
-      if self.stall_blip_hold_s >= _STALL_HOLD_S and self.stall_blip_count < _STALL_MAX_BLIPS:
+      if (self.stall_blip_hold_s >= _STALL_HOLD_S and self.stall_blip_count < _STALL_MAX_BLIPS
+          and abs(self.path_angle_last) < _BLIP_MAX_PATH_ANGLE):
         self.stall_blip_frames_left = _STALL_BLIP_FRAMES
         self.stall_blip_hold_s = 0.0
         self.stall_blip_count += 1
