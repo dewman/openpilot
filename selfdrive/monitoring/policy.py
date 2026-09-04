@@ -153,7 +153,8 @@ class DriverMonitoring:
     self.threshold_alert_2 = 0.
     self.dcam_uncertain_cnt = 0
     self.dcam_reset_cnt = 0
-    self.too_distracted = Params().get_bool("DriverTooDistracted")
+    # self.too_distracted = Params().get_bool("DriverTooDistracted")
+    self.too_distracted = False
 
     self._reset_awareness()
     self._set_policy(MonitoringPolicy.vision)
