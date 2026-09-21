@@ -26,7 +26,9 @@ from openpilot.common.file_chunker import read_file_chunked, get_manifest_path
 from openpilot.selfdrive.modeld.constants import ModelConstants, Plan
 from openpilot.selfdrive.modeld.helpers import usbgpu_present, modeld_pkl_path, get_tg_input_devices
 
-from openpilot.sunnypilot.livedelay.helpers import get_lat_delay
+# BluePilot: selected timing and its actual source are logged with each model frame.
+from openpilot.sunnypilot.livedelay.helpers import select_lat_delay
+# End BluePilot
 from openpilot.sunnypilot.modeld_v2.modeld_base import ModelStateBase
 
 PROCESS_NAME = "selfdrive.modeld.modeld"
@@ -216,6 +218,10 @@ def main(demo=False):
   else:
     CP = messaging.log_from_bytes(params.get("CarParams", block=True), car.CarParams)
   cloudlog.info("modeld got CarParams: %s", CP.brand)
+  # BluePilot: initialize before the first model frame, without the previous route's cache.
+  delay_selection = select_lat_delay(params, 0.0, CP.steerActuatorDelay)
+  model.lat_delay = delay_selection.value
+  # End BluePilot
 
   # TODO this needs more thought, use .2s extra for now to estimate other delays
   # TODO Move smooth seconds to action function
@@ -262,8 +268,11 @@ def main(demo=False):
     is_rhd = sm["driverMonitoringState"].isRHD
     frame_id = sm["roadCameraState"].frameId
     v_ego = max(sm["carState"].vEgo, 0.)
-    if sm.frame % 60 == 0:
-      model.lat_delay = get_lat_delay(params, sm["liveDelay"].lateralDelay)
+    # BluePilot: resolve the first live publication promptly instead of waiting on startup fallback.
+    if sm.frame % 60 == 0 or delay_selection.source == "fallback":
+      delay_selection = select_lat_delay(params, sm["liveDelay"].lateralDelay, CP.steerActuatorDelay)
+      model.lat_delay = delay_selection.value
+    # End BluePilot
     lat_delay = model.lat_delay + LAT_SMOOTH_SECONDS
     if sm.updated["liveCalibration"] and sm.seen['roadCameraState'] and sm.seen['deviceState']:
       device_from_calib_euler = np.array(sm["liveCalibration"].rpyCalib, dtype=np.float32)
@@ -329,6 +338,12 @@ def main(demo=False):
       modelv2_send.modelV2.meta.laneChangeState = DH.lane_change_state
       modelv2_send.modelV2.meta.laneChangeDirection = DH.lane_change_direction
       mdv2sp_send.modelDataV2SP.laneTurnDirection = DH.lane_turn_direction
+      # BluePilot: log consumer timing, not a later snapshot of the lag learner.
+      mdv2sp_send.modelDataV2SP.lateralDelay = model.lat_delay
+      mdv2sp_send.modelDataV2SP.lateralDelaySource = delay_selection.source
+      mdv2sp_send.modelDataV2SP.lateralActionTime = lat_action_t
+      mdv2sp_send.modelDataV2SP.modelMonoTime = modelv2_send.logMonoTime
+      # End BluePilot
       drivingdata_send.drivingModelData.meta.laneChangeState = DH.lane_change_state
       drivingdata_send.drivingModelData.meta.laneChangeDirection = DH.lane_change_direction
 

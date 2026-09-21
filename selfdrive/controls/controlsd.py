@@ -140,7 +140,9 @@ class Controls(ControlsExt):
     else:
       new_desired_curvature = model_v2.action.desiredCurvature if CC.latActive else self.curvature
     self.desired_curvature, curvature_limited = clip_curvature(CS.vEgo, self.desired_curvature, new_desired_curvature, lp.roll)
-    lat_delay = self.sm["liveDelay"].lateralDelay + LAT_SMOOTH_SECONDS
+    # BluePilot: apply the selected mode while retaining frame-current live timing.
+    lat_delay = self.delay_settings.select(self.sm["liveDelay"].lateralDelay, self.CP.steerActuatorDelay).value + LAT_SMOOTH_SECONDS
+    # End BluePilot
 
     actuators.curvature = self.desired_curvature
     steer, steeringAngleDeg, lac_log = self.LaC.update(CC.latActive, CS, self.VM, lp,

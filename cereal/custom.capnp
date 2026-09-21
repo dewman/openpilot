@@ -448,6 +448,12 @@ struct LiveMapDataSP @0xf416ec09499d9d19 {
 
 struct ModelDataV2SP @0xa1680744031fdb2d {
   laneTurnDirection @0 :TurnDirection;
+  # BluePilot: actual model-consumer timing, correlated with modelV2 by message timestamp.
+  lateralDelay @1 :Float32;       # selected delay, before model smoothing/frame offsets
+  lateralDelaySource @2 :Text;   # live / fixed / fallback; empty on older logs
+  lateralActionTime @3 :Float32; # final action lookup time passed to action extraction
+  modelMonoTime @4 :UInt64;
+  # End BluePilot
 
   enum TurnDirection {
     none @0;
@@ -464,6 +470,36 @@ struct CustomReserved11 @0xc2243c65e0340384 {
 
 struct CustomReserved12 @0x9ccdc8676701b412 {
 }
+
+# BluePilot: one 20 Hz angle-control snapshot, republished at controllerStateBP cadence.
+struct FordAngleDiagnostics {
+  valid @0 :Bool; # true only after an active angle-mode calculation completes
+  controlMonoTime @1 :UInt64; # control tick timestamp, nanoseconds; repeats between 20 Hz updates
+  controlFrame @2 :UInt64; # 100 Hz carcontroller frame counter at the steering update
+  modelMonoTime @3 :UInt64; # timestamp of the modelV2 consumed; zero if not received
+  liveDelayMonoTime @4 :UInt64; # timestamp of liveDelay consumed; zero if not received
+  modelAge @5 :Float32; # seconds since model publication, excluding inference/camera age
+  delay @6 :Float32; # selected delay before Ford caps and extra lookahead, seconds
+  delaySource @7 :Text; # live / fixed / fallback; live includes lagd fallback
+  decisionHorizon @8 :Float32; # entering/exiting decision lookup, seconds
+  predictionHorizon @9 :Float32; # actual Ford model prediction lookup, seconds
+  desiredCurvature @10 :Float32; # planner curvature consumed, 1/m
+  rawPredictedCurvature @11 :Float32; # model prediction before smoothing, 1/m
+  predictedCurvature @12 :Float32; # model prediction after smoothing, 1/m
+  blendWeight @13 :Float32; # effective prediction weight
+  blendedCurvature @14 :Float32; # before lane trim and lane-change scaling, 1/m
+  curvatureBeforeClip @15 :Float32; # after lane trim, before deviation clip, 1/m
+  commandedCurvature @16 :Float32; # after deviation clip, before gain, 1/m
+  measuredCurvature @17 :Float32; # feedback used by clip and stall detection, 1/m
+  pinionFeedback @18 :Bool; # true if measuredCurvature comes from pinion vehicle model
+  curvatureGain @19 :Float32; # effective speed/curvature gain
+  pathAngleBeforeLimits @20 :Float32; # before authority/DBC/rate limits, radians
+  pathAngleBeforeHold @21 :Float32; # after limits, before wire hold, radians
+  pathAngle @22 :Float32; # final strategy output, radians; CAN uses opposite sign and quantization
+  smoothingEnabled @23 :Bool; # controller-latched toggle for this tick
+  smoothingStrength @24 :Float32; # effective strength (menu minus one)
+}
+# End BluePilot
 
 struct ControllerStateBP @0xcd96dafb67a082d0 {
   lateralUncertainty @0 :Float32;  # BluePilot: lateral uncertainty for angleState (e.g. torque bar)
@@ -567,6 +603,9 @@ struct ControllerStateBP @0xcd96dafb67a082d0 {
   angleSmoothingStrength @59 :Float32;  # effective strength: menu value minus 1; zero is passthrough
   angleLowCurveFactor @60 :Float32;
   pinionCurvatureEnabled @61 :Bool;  # latched at car initialization; does not follow a mid-drive toggle
+  # BluePilot: append only; old logs decode to valid=false.
+  angleDiagnostics @62 :FordAngleDiagnostics;
+  # End BluePilot
 }
 
 struct CarStateBP @0xb057204d7deadf3f {

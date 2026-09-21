@@ -139,6 +139,9 @@ class CarController(CarControllerBase, LateralCurvExt, LateralAngleExt, Longitud
     # BluePilot: keep stock lateral path in carcontroller, and run BP 4-signal lateral
     # only when bypass is disabled.
     if (self.frame % CarControllerParams.STEER_STEP) == 0:
+      # BluePilot: invalidate the previous steering snapshot when another strategy runs.
+      self.bp_angle_diagnostics = structs.FordAngleDiagnostics(controlMonoTime=now_nanos, controlFrame=self.frame)
+      # End BluePilot
       current_curvature = -CS.out.yawRate / max(CS.out.vEgoRaw, 0.1)
       # BluePilot: bypass flag is owned by stock carcontroller path.
       bypass_bp_lat = self.disable_BP_lat_UI
@@ -168,7 +171,9 @@ class CarController(CarControllerBase, LateralCurvExt, LateralAngleExt, Longitud
         # strategy runs. Panda rate-checks desired_curvature vs the last TX on the bus; that must match
         # the prior frame's lat.apply_curvature only (not an intermediate stock-limited value).
         if self.primary_lateral_control == PrimaryLateralControl.angle:
-          lat = LateralAngleExt.update_angle_strategy(self, CC, CS, actuators, self.CP)
+          # BluePilot: pass the control tick time for coherent angle diagnostics.
+          lat = LateralAngleExt.update_angle_strategy(self, CC, CS, actuators, self.CP, now_nanos)
+          # End BluePilot
         else:
           lat = LateralCurvExt.update(self, CC, CS, actuators, self.apply_curvature_last, self.CP)
         self.apply_curvature_last = lat.apply_curvature

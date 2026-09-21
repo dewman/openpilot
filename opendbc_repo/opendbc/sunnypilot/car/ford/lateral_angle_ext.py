@@ -36,7 +36,8 @@ admitted by ford.h's path_angle ROC check (2% looser) without any bypass.
 import numpy as np
 from numpy import clip, interp
 
-from opendbc.car import DT_CTRL
+from opendbc.car import DT_CTRL, structs
+from openpilot.sunnypilot.livedelay.helpers import DelaySettings, read_delay_settings
 from opendbc.car.lateral import apply_std_steer_angle_limits
 from opendbc.car.ford.values import CarControllerParams
 from opendbc.sunnypilot.car.ford.angle_autocal import Frame
@@ -133,6 +134,8 @@ class LateralAngleExt:
   def __init__(self, CP=None, CP_SP=None):
     # Predicted-curvature blend for path_angle: pred * b + desired * (1-b); b from ``FordPathAngleBlendRatio``
     self.path_angle_blend_ratio = _FORD_PATH_ANGLE_BLEND_RATIO_DEFAULT
+    self.angle_delay_settings = DelaySettings()
+    self.bp_angle_diagnostics = structs.FordAngleDiagnostics()
     # Max extra VLT above t_base; from ``FordVLTExtraMax`` param
     self.vlt_extra_max = _VLT_T_EXTRA_MAX
     # Telemetry: final path_angle (rad) after limits (see bp_card_publisher)
@@ -261,6 +264,7 @@ class LateralAngleExt:
       self._autocal_param_ctr += 1
       if self._autocal_param_ctr >= 100:
         self._autocal_param_ctr = 0
+        self.angle_delay_settings = read_delay_settings(params)
         try:
           _sm_enabled = bool(params.get_bool("FordAngleSmoothing"))
           raw_strength = params.get("FordAngleSmoothStrength", return_default=True)
@@ -328,7 +332,7 @@ class LateralAngleExt:
     return LateralResult(apply_curvature=0.0, curvature_rate=0.0, path_offset=0.0,
                          path_angle=0.0, ramp_type=0, precision_type=1, lateralUncertainty=0.0)
 
-  def update_angle_strategy(self, CC, CS, actuators, CP):
+  def update_angle_strategy(self, CC, CS, actuators, CP, now_nanos=0):
     """
     Curvature from planner (+ optional predicted blend, + lane centering trim) → path_angle via
     ½·κ·d_ref. c0 (path_offset) is always zero on the wire; the lane centering trim lives entirely
@@ -336,6 +340,10 @@ class LateralAngleExt:
     Blended κ is not passed through Ford c2 rate / DBC limits (those target the curvature actuator).
     """
     self._ensure_lateral_curv_initialized(CP)
+    # Fresh on every strategy call, including inactive/override/blip returns.
+    self.bp_angle_diagnostics = structs.FordAngleDiagnostics(
+      controlMonoTime=now_nanos, controlFrame=getattr(self, "frame", 0))
+    diag = self.bp_angle_diagnostics
 
     v_ego = float(CS.out.vEgoRaw)
     d_ref = pscm_d_ref_m(v_ego)
@@ -436,8 +444,9 @@ class LateralAngleExt:
     #    actual-osc 0.21 mrad/m, actual trailing desired by exactly the actuation delay).
     #    Exits stay protected regardless of this deeper lead: the exit-biased blend
     #    collapses the prediction weight to ~15% there.
-    _t_entering = float(clip(self.sm['liveDelay'].lateralDelay, 0.1, 0.15)) + _DT_MDL
-    _t_base = float(clip(self.sm['liveDelay'].lateralDelay, 0.1, 0.30)) + _DT_MDL
+    selected_delay = self.angle_delay_settings.select(self.sm['liveDelay'].lateralDelay, CP.steerActuatorDelay)
+    _t_entering = float(clip(selected_delay.value, 0.1, 0.15)) + _DT_MDL
+    _t_base = float(clip(selected_delay.value, 0.1, 0.30)) + _DT_MDL
     _speed_factor = float(interp(v_ego, [_VLT_V_LOW_MS, _VLT_V_HIGH_MS], [1.0, 0.0]))
     # Direction-aware kappa factor: on curve ENTRY (model shows more curvature at t_base than planner now),
     # keep full lookahead so pre-steering begins early. On exit/apex, taper by magnitude to prevent unwind.
@@ -465,6 +474,7 @@ class LateralAngleExt:
       )
     # Anti-weave: low-pass the model prediction to strip frame-to-frame jitter (details
     # in angle_smoothing.prediction — inside the VLT's slack, so no curve-entry cost).
+    diag.rawPredictedCurvature = predicted_curvature
     predicted_curvature = self.smoother.prediction(predicted_curvature)
 
     b = float(self.path_angle_blend_ratio)
@@ -498,6 +508,7 @@ class LateralAngleExt:
     # Anti-weave: slew instead of stepping the exit blend (bounded ramps, no 4x steps).
     b_blend = self.smoother.blend(_b_target)
     requested_curvature = predicted_curvature * b_blend + desired_curvature * (1.0 - b_blend)
+    diag.blendedCurvature = float(requested_curvature)
     self._desired_curvature_last = desired_curvature
 
     if self.model is not None:
@@ -540,6 +551,7 @@ class LateralAngleExt:
     # here; this brings angle mode's actual steering intent in line with that proven behavior rather
     # than only clipping the value reported to panda (which would make the check a no-op).
     current_curvature = self.get_current_curvature(CS)
+    diag.curvatureBeforeClip = kappa_cmd
     self.bp_curvature_deviation_limited = False
     if v_ego > 9:
       _kappa_cmd_pre_error_clip = kappa_cmd
@@ -615,6 +627,7 @@ class LateralAngleExt:
 
     # Anti-weave: 1-LSB wire hold on the outgoing path_angle (kills LSB dither; held
     # frames are zero-ROC and cannot trip panda — details in angle_smoothing.wire).
+    diag.pathAngleBeforeHold = float(path_angle)
     path_angle = self.smoother.wire(path_angle)
 
 
@@ -677,6 +690,28 @@ class LateralAngleExt:
     # Nudges are written to the factor params — update_angle_params reads them back, so the
     # factors have a single owner here. Human-turn/stall-blip frames never reach this point.
     self._feed_autocal(CS, kappa_cmd, current_curvature)
+
+    # Capture the values used above, not recomputed values at publication time.
+    mono_times = getattr(self.sm, "logMonoTime", {})
+    diag.modelMonoTime = mono_times.get("modelV2", 0)
+    diag.liveDelayMonoTime = mono_times.get("liveDelay", 0)
+    diag.modelAge = max(0.0, (now_nanos - diag.modelMonoTime) * 1e-9) if diag.modelMonoTime else 0.0
+    diag.delay = selected_delay.value
+    diag.delaySource = selected_delay.source
+    diag.decisionHorizon = _t_entering
+    diag.predictionHorizon = curvature_lookup_time
+    diag.desiredCurvature = desired_curvature
+    diag.predictedCurvature = predicted_curvature
+    diag.blendWeight = b_blend
+    diag.commandedCurvature = kappa_cmd
+    diag.measuredCurvature = current_curvature
+    diag.pinionFeedback = self.bp_pinion_curvature_enabled
+    diag.curvatureGain = float(self.curvature_factor)
+    diag.pathAngleBeforeLimits = float(path_angle_calc)
+    diag.pathAngle = float(path_angle)
+    diag.smoothingEnabled = self.smoother.enabled
+    diag.smoothingStrength = self.smoother.strength
+    diag.valid = True
 
     return LateralResult(
       apply_curvature=0.0,

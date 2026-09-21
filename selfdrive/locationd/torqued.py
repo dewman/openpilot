@@ -185,7 +185,9 @@ class TorqueEstimator(ParameterEstimator, TorqueEstimatorExt):
     elif which == "liveCalibration":
       self.calibrator.feed_live_calib(msg)
     elif which == "liveDelay":
-      self.lag = get_lat_delay(self.params, msg.lateralDelay)
+      # BluePilot: align torque-learning samples with the selected fixed/live delay.
+      self.lag = get_lat_delay(self.params, msg.lateralDelay, self.CP.steerActuatorDelay)
+      # End BluePilot
     # calculate lateral accel from past steering torque
     elif which == "livePose":
       is_valid = msg.angularVelocityDevice.valid and msg.orientationNED.valid and msg.inputsOK and msg.sensorsOK and msg.posenetOK

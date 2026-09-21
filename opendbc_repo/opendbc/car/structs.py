@@ -172,9 +172,43 @@ class CarStateSP:
   speedLimit: float = auto_field()
 
 
+# BluePilot: one coherent steering-update snapshot; invalid snapshots carry no old command stages.
+@auto_dataclass
+class FordAngleDiagnostics:
+  valid: bool = False
+  controlMonoTime: int = 0
+  controlFrame: int = 0
+  modelMonoTime: int = 0
+  liveDelayMonoTime: int = 0
+  modelAge: float = 0.0
+  delay: float = 0.0
+  delaySource: str = ""
+  decisionHorizon: float = 0.0
+  predictionHorizon: float = 0.0
+  desiredCurvature: float = 0.0
+  rawPredictedCurvature: float = 0.0
+  predictedCurvature: float = 0.0
+  blendWeight: float = 0.0
+  blendedCurvature: float = 0.0
+  curvatureBeforeClip: float = 0.0
+  commandedCurvature: float = 0.0
+  measuredCurvature: float = 0.0
+  pinionFeedback: bool = False
+  curvatureGain: float = 0.0
+  pathAngleBeforeLimits: float = 0.0
+  pathAngleBeforeHold: float = 0.0
+  pathAngle: float = 0.0
+  smoothingEnabled: bool = False
+  smoothingStrength: float = 0.0
+# End BluePilot
+
+
 # BluePilot: ControllerStateBP for lateral uncertainty (angleState vehicles)
 @auto_dataclass
 class ControllerStateBP:
+  # BluePilot: appended diagnostic data, never a control input.
+  angleDiagnostics: FordAngleDiagnostics = field(default_factory=FordAngleDiagnostics)
+  # End BluePilot
   lateralUncertainty: float = 0.0
   angleRateLimited: bool = False       # angle mode: path_angle soft-ROC clip bit this frame
   curvatureRateLimited: bool = False   # sim: equivalent curvature would be rate-limited by lateral_curv_ext

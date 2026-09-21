@@ -13,7 +13,9 @@ from opendbc.car import structs
 from openpilot.common.params import Params
 from openpilot.common.swaglog import cloudlog
 from openpilot.sunnypilot import PARAMS_UPDATE_PERIOD
-from openpilot.sunnypilot.livedelay.helpers import get_lat_delay
+# BluePilot: keep settings polling separate from sampling the live delay.
+from openpilot.sunnypilot.livedelay.helpers import read_delay_settings
+# End BluePilot
 from openpilot.sunnypilot.modeld_v2.modeld_base import ModelStateBase
 from openpilot.sunnypilot.selfdrive.controls.lib.blinker_pause_lateral import BlinkerPauseLateral
 from openpilot.sunnypilot.selfdrive.controls.lib.latcontrol_torque_v0 import LatControlTorque as LatControlTorqueV0
@@ -24,6 +26,10 @@ class ControlsExt(ModelStateBase):
     ModelStateBase.__init__(self)
     self.CP = CP
     self.params = params
+    # BluePilot: initialize from the current vehicle, not the previous route's delay cache.
+    self.delay_settings = read_delay_settings(params)
+    self.lat_delay = self.delay_settings.select(0.0, CP.steerActuatorDelay).value
+    # End BluePilot
     self._param_update_time: float = 0.0
     self.blinker_pause_lateral = BlinkerPauseLateral()
 
@@ -51,8 +57,10 @@ class ControlsExt(ModelStateBase):
     if time.monotonic() - self._param_update_time > PARAMS_UPDATE_PERIOD:
       self.blinker_pause_lateral.get_params()
 
-      if self.CP.lateralTuning.which() == 'torque':
-        self.lat_delay = get_lat_delay(self.params, sm["liveDelay"].lateralDelay)
+      # BluePilot: use the same explicit delay selection as modeld.
+      self.delay_settings = read_delay_settings(self.params)
+      self.lat_delay = self.delay_settings.select(sm["liveDelay"].lateralDelay, self.CP.steerActuatorDelay).value
+      # End BluePilot
 
       self._param_update_time = time.monotonic()
 

@@ -8,6 +8,9 @@ from cereal import log
 
 from opendbc.car import structs
 from openpilot.common.params import Params
+# BluePilot: share fixed/live selection with the consumers.
+from openpilot.sunnypilot.livedelay.helpers import get_lat_delay
+# End BluePilot
 
 
 class LagdToggle:
@@ -16,23 +19,8 @@ class LagdToggle:
     self.params = Params()
     self.lag = 0.0
 
-    self.lagd_toggle = self.params.get_bool("LagdToggle")
-    self.software_delay = self.params.get("LagdToggleDelay", return_default=True)
-
-  def read_params(self) -> None:
-    self.lagd_toggle = self.params.get_bool("LagdToggle")
-    self.software_delay = self.params.get("LagdToggleDelay", return_default=True)
-
   def update(self, lag_msg: log.LiveDelayData) -> None:
-    self.read_params()
-
-    if not self.lagd_toggle:
-      steer_actuator_delay = self.CP.steerActuatorDelay
-      delay = self.software_delay
-      self.lag = (steer_actuator_delay + delay)
-      self.params.put("LagdValueCache", self.lag)
-      return
-
-    lateral_delay = lag_msg.liveDelay.lateralDelay
-    self.lag = lateral_delay
+    # BluePilot: cache is compatibility output only, never the source of selected timing.
+    self.lag = get_lat_delay(self.params, lag_msg.liveDelay.lateralDelay, self.CP.steerActuatorDelay)
     self.params.put("LagdValueCache", self.lag)
+    # End BluePilot
