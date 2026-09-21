@@ -1,5 +1,11 @@
 # Steering delay selection and Ford angle diagnostics
 
+**Capture ended September 21, 2026:** continuous publication of the temporary
+`angleDiagnostics` snapshot and model timing fields has been removed. The fixed
+delay selection fix remains active. The schemas remain readable for the existing
+captures; the diagnostic descriptions below document those captures, not current
+live telemetry. Controller calculations and vehicle settings are unchanged.
+
 Branch `dmitry-bp-exp` fixes the manual steering-delay selection and adds the
 measurements needed to investigate the Raptor's straight-road oscillation.
 It does not establish that oscillation is fixed or introduce a new steering tune.
@@ -117,3 +123,19 @@ Tests run in an isolated directory using the comma's native compiled dependencie
 without switching its installed checkout or changing driving parameters. A full
 firmware build, full safety suite and road validation are not claimed. No safety
 firmware or CAN limits are modified.
+
+## Capture retirement
+
+The temporary controller snapshot was being repeated on the existing 100 Hz
+`controllerStateBP` topic even though steering updates run at 20 Hz. There was no
+additional file logger. On two one-minute segments of route
+`00000033--b3b4ab78d5`, removing the temporary controller/model fields and
+recompressing at loggerd's Zstandard level 10 saved approximately 69–76 kB per
+minute (about 4–5 MB/hour, 0.6% of rlog size). This is a recompression estimate,
+not an exact measurement of all historical routes or qlogs.
+
+The current publisher omits the nested snapshot entirely, rather than repeatedly
+serializing an empty diagnostic struct. Both model publishers stop populating the
+temporary timing fields. Tests verify absence of the nested payload, preservation
+of regular controller telemetry, and continued decoding of historical snapshots.
+No collected routes are deleted by this change.

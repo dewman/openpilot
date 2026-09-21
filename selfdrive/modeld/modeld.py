@@ -338,12 +338,6 @@ def main(demo=False):
       modelv2_send.modelV2.meta.laneChangeState = DH.lane_change_state
       modelv2_send.modelV2.meta.laneChangeDirection = DH.lane_change_direction
       mdv2sp_send.modelDataV2SP.laneTurnDirection = DH.lane_turn_direction
-      # BluePilot: log consumer timing, not a later snapshot of the lag learner.
-      mdv2sp_send.modelDataV2SP.lateralDelay = model.lat_delay
-      mdv2sp_send.modelDataV2SP.lateralDelaySource = delay_selection.source
-      mdv2sp_send.modelDataV2SP.lateralActionTime = lat_action_t
-      mdv2sp_send.modelDataV2SP.modelMonoTime = modelv2_send.logMonoTime
-      # End BluePilot
       drivingdata_send.drivingModelData.meta.laneChangeState = DH.lane_change_state
       drivingdata_send.drivingModelData.meta.laneChangeDirection = DH.lane_change_direction
 

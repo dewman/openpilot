@@ -206,8 +206,8 @@ class FordAngleDiagnostics:
 # BluePilot: ControllerStateBP for lateral uncertainty (angleState vehicles)
 @auto_dataclass
 class ControllerStateBP:
-  # BluePilot: appended diagnostic data, never a control input.
-  angleDiagnostics: FordAngleDiagnostics = field(default_factory=FordAngleDiagnostics)
+  # BluePilot: the temporary angleDiagnostics capture has ended. Keep its cereal
+  # schema for old logs, but omit it here so normal publishing allocates no payload.
   # End BluePilot
   lateralUncertainty: float = 0.0
   angleRateLimited: bool = False       # angle mode: path_angle soft-ROC clip bit this frame

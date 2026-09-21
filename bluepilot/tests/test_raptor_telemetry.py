@@ -27,9 +27,8 @@ def test_controller_latched_settings_are_published(monkeypatch):
 
 
 @pytest.mark.parametrize("mode", [0, 1])
-def test_angle_snapshot_round_trips_and_is_hidden_in_other_modes(monkeypatch, mode):
-  from dataclasses import fields
-  from cereal import custom, log
+def test_temporary_angle_capture_is_not_published(monkeypatch, mode):
+  from cereal import log
   from opendbc.car import structs
 
   monkeypatch.setattr(publisher, "_settings_cache", {"bmsPrimaryControlVariable": mode})
@@ -42,15 +41,27 @@ def test_angle_snapshot_round_trips_and_is_hidden_in_other_modes(monkeypatch, mo
                        bp_angle_diagnostics=snapshot)
   sent = []
   publisher.publish_controller_state_bp(SimpleNamespace(CC=cc), SimpleNamespace(send=lambda _, msg: sent.append(msg)))
-  # Serialize all the way through capnp to catch undeclared/dropped dataclass fields.
+  # An empty allocated snapshot would still add bytes at 100 Hz. Omit the payload.
   with log.Event.from_bytes(sent[0].to_bytes()) as event:
+    assert "angleDiagnostics" not in event.controllerStateBP.to_dict()
     decoded = event.controllerStateBP.angleDiagnostics
-    assert decoded.valid == (mode == 1)
+    assert not decoded.valid
+    assert decoded.pathAngle == 0.0
+
+
+def test_historical_angle_diagnostics_still_decode():
+  from dataclasses import asdict, fields
+  from cereal import custom
+  from opendbc.car import structs
+
+  snapshot = structs.FordAngleDiagnostics(valid=True, controlMonoTime=1234567890,
+                                        delay=.33, delaySource="fixed", pathAngle=.004)
+  archived = custom.ControllerStateBP.new_message(angleDiagnostics=asdict(snapshot))
+  with custom.ControllerStateBP.from_bytes(archived.to_bytes()) as message:
+    decoded = message.angleDiagnostics
     assert set(custom.FordAngleDiagnostics.schema.fields) == {f.name for f in fields(snapshot)}
-    if mode == 1:
-      assert decoded.controlMonoTime == snapshot.controlMonoTime
-      assert decoded.delaySource == "fixed"
-      assert decoded.delay == pytest.approx(.32)
-      assert decoded.pathAngle == pytest.approx(.004)
-    else:
-      assert decoded.pathAngle == 0.0
+    assert decoded.valid
+    assert decoded.controlMonoTime == snapshot.controlMonoTime
+    assert decoded.delaySource == "fixed"
+    assert decoded.delay == pytest.approx(.33)
+    assert decoded.pathAngle == pytest.approx(.004)

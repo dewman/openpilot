@@ -161,8 +161,6 @@ def publish_controller_state_bp(CI, pm):
     # param-sourced telemetry made that undiagnosable from logs. bp_autocal_status carries
     # the controller's own view (armed/evidence/nudges, "off", "locked", or an error).
     cc = CI.CC
-    if cs_bp.activeLateralMode == structs.ControllerStateBP.LateralMode.angle:
-      cs_bp.angleDiagnostics = getattr(cc, "bp_angle_diagnostics", structs.FordAngleDiagnostics())
     cs_bp.angleSmoothingEnabled = bool(getattr(cc, "smoothing_enabled", False))
     cs_bp.angleSmoothingStrength = float(getattr(cc, "smoothing_strength", 0.0))
     cs_bp.angleLowCurveFactor = float(getattr(cc, "user_dampening_factor", 1.0))
