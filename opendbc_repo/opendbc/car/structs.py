@@ -182,6 +182,10 @@ class ControllerStateBP:
   humanTurnLateralPaused: bool = False  # angle mode: lateral forced inactive (mode 0) during a manual turn
   stallBlipActive: bool = False  # angle mode: brief mode-0 pulse resetting PSCM authority after a post-override stall
   angleSaturated: bool = False  # angle mode: PSCM authority limit or DBC clamp modified this frame's command
+  angleSmoothingEnabled: bool = False
+  angleSmoothingStrength: float = 0.0
+  angleLowCurveFactor: float = 1.0
+  pinionCurvatureEnabled: bool = False
 
   # BluePilot: full BluePilot-menu settings snapshot -- see custom.capnp ControllerStateBP for
   # field-by-field param-key mapping and the field-retirement convention.

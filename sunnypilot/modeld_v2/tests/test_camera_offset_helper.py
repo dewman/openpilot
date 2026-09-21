@@ -25,6 +25,18 @@ class TestCameraOffset:
     self.camera_offset = CameraOffsetHelper()
     self.dc = DEVICE_CAMERAS[('mici', 'os04c10')]
 
+  def test_tall_vehicle_uses_estimated_height_without_tire_offset(self):
+    # BluePilot: a tire swap is already included in the observed lens height. Adding
+    # a second diameter-based correction would double-count it. Test both cameras.
+    self.camera_offset.set_offset(.2)
+    sm = MockStruct(deviceState=MockStruct(deviceType='mici'), roadCameraState=MockStruct(sensor='os04c10'),
+                    liveCalibration=MockStruct(rpyCalib=[0., 0., 0.], height=[1.62]))
+    identity = np.eye(3, dtype=np.float32)
+    main, extra = self.camera_offset.update(identity, identity, sm, False)
+    np.testing.assert_allclose(main[0, 1], .02 / 1.62)
+    np.testing.assert_allclose(extra[0, 1], .02 / 1.62)
+    # End BluePilot
+
   def test_smoothing(self):
     self.camera_offset.set_offset(0.2)
 

@@ -144,7 +144,7 @@ class CarController(CarControllerBase, LateralCurvExt, LateralAngleExt, Longitud
       bypass_bp_lat = self.disable_BP_lat_UI
       if bypass_bp_lat:
         # Stock curvature-only path only. Anti-overshoot is not used when BP lateral is active (disable_BP_lat_UI off).
-        if self.CP.carFingerprint in (CAR.FORD_BRONCO_SPORT_MK1, CAR.FORD_F_150_MK14):
+        if self.CP.carFingerprint in (CAR.FORD_BRONCO_SPORT_MK1, CAR.FORD_F_150_MK14, CAR.FORD_F_150_RAPTOR_MK3):
           self.anti_overshoot_curvature_last = anti_overshoot(actuators.curvature, self.anti_overshoot_curvature_last, CS.out.vEgoRaw)
           apply_curvature = self.anti_overshoot_curvature_last
         else:

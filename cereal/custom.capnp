@@ -562,6 +562,11 @@ struct ControllerStateBP @0xcd96dafb67a082d0 {
   bmsAngleAutoCalibrate @55 :Bool;  # FordAngleAutoCal toggle state
   bmsAngleAutoCalState @56 :Text;  # live controller status (bp_autocal_status): "off"/"locked"/"reset" or armed JSON
   angleSaturated @57 :Bool;  # angle mode: PSCM authority limit or DBC clamp modified this frame's command
+  # BluePilot: controller-latched diagnostics for Raptor sway comparisons (not menu snapshots).
+  angleSmoothingEnabled @58 :Bool;
+  angleSmoothingStrength @59 :Float32;  # effective strength: menu value minus 1; zero is passthrough
+  angleLowCurveFactor @60 :Float32;
+  pinionCurvatureEnabled @61 :Bool;  # latched at car initialization; does not follow a mid-drive toggle
 }
 
 struct CarStateBP @0xb057204d7deadf3f {

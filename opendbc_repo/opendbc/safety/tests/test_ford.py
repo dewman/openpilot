@@ -803,6 +803,22 @@ class TestFordPinionF150Safety(FordF150PinionGeometry, TestFordPinionCurvatureSa
   pass
 
 
+class FordRaptorPinionGeometry:
+  GEOMETRY_INDEX = 13
+  PINION_SLIP_FACTOR = -0.00045405578
+  PINION_STEER_RATIO = 17.2
+  PINION_WHEELBASE = 3.694
+  SAFETY_PARAM_SP = int(FordSafetyFlagsSP.STEER_ANGLE_CURVATURE) | (GEOMETRY_INDEX << FORD_PINION_GEOMETRY_SHIFT)
+
+
+class TestFordPinionRaptorStockSafety(FordRaptorPinionGeometry, TestFordPinionCurvatureSafetyBase, TestFordCANFDStockSafety):
+  pass
+
+
+class TestFordPinionRaptorLongitudinalSafety(FordRaptorPinionGeometry, TestFordPinionCurvatureSafetyBase, TestFordCANFDLongitudinalSafety):
+  pass
+
+
 class TestFordPinionGeometryTable(unittest.TestCase):
   """The firmware geometry table must match CarSpecs + calc_slip_factor(VehicleModel(CP))
   for every supported platform, so the table cannot rot as platforms change. Reads the

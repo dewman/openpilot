@@ -671,6 +671,16 @@
     ],
     "package": "Co-Pilot360 Assist 2.0"
   },
+  "Ford F-150 Raptor 2023": {
+    "platform": "FORD_F_150_RAPTOR_MK3",
+    "make": "Ford",
+    "brand": "ford",
+    "model": "F-150 Raptor",
+    "year": [
+      "2023"
+    ],
+    "package": "Co-Pilot360 Assist 2.0"
+  },
   "Ford Focus 2018-22": {
     "platform": "FORD_FOCUS_MK4",
     "make": "Ford",

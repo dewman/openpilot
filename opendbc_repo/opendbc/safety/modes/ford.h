@@ -243,7 +243,7 @@ static const AngleSteeringLimits FORD_STEERING_LIMITS_PINION = FORD_LIMITS(false
 // out-of-range index so a half-configured param can never select the wrong geometry.
 // FORD_EDGE_MK2 (ALT_STEER_ANGLE: relative pinion angle + learned offset) is unsupported
 // and deliberately absent.
-#define FORD_PINION_GEOMETRY_COUNT 12U
+#define FORD_PINION_GEOMETRY_COUNT 13U
 static const AngleSteeringParams ford_pinion_geometry[FORD_PINION_GEOMETRY_COUNT + 1U] = {
   {.slip_factor = 0.0f, .steer_ratio = 1.0f, .wheelbase = 1.0f},                  // 0: invalid
   {.slip_factor = -0.00062819555f, .steer_ratio = 17.7f, .wheelbase = 2.670f},    // 1: FORD_BRONCO_SPORT_MK1
@@ -258,6 +258,7 @@ static const AngleSteeringParams ford_pinion_geometry[FORD_PINION_GEOMETRY_COUNT
   {.slip_factor = -0.00058852001f, .steer_ratio = 14.8f, .wheelbase = 2.850f},    // 10: FORD_MONDEO_MK5
   {.slip_factor = -0.00056209187f, .steer_ratio = 17.0f, .wheelbase = 2.984f},    // 11: FORD_MUSTANG_MACH_E_MK1
   {.slip_factor = -0.00051293030f, .steer_ratio = 17.0f, .wheelbase = 3.270f},    // 12: FORD_RANGER_MK2
+  {.slip_factor = -0.00045405578f, .steer_ratio = 17.2f, .wheelbase = 3.694f},    // 13: FORD_F_150_RAPTOR_MK3
 };
 
 // BluePilot: steering-angle curvature measurement state (STEER_ANGLE_CURVATURE), set once

@@ -19,6 +19,9 @@ from opendbc.car.psa.values import CAR as PSA
 
 # FIXME: add routes for these cars
 non_tested_cars = [
+  # BluePilot: explicit Raptor profile; no public route recorded under this identity yet.
+  FORD.FORD_F_150_RAPTOR_MK3,
+  # End BluePilot
   MOCK.MOCK,
   GM.CADILLAC_ATS,
   GM.HOLDEN_ASTRA,

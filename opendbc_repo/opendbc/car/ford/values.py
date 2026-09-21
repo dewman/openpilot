@@ -202,6 +202,17 @@ class CAR(Platforms):
     CarSpecs(mass=3334, wheelbase=3.99, steerRatio=17.0),
     wmis={'1FT'}, vds_codes=F150_VDS_CODES, years={MY_2021, MY_2022, MY_2023},
   )
+  # BluePilot: explicitly selected V6 Raptor profile. Do not copy F-150 firmware/VIN
+  # matches: those cannot distinguish this chassis or its aftermarket tire fitment.
+  # Ford 2023 eSourceBook: 5757 lb base curb mass, 145.4 in wheelbase, 17.2:1 steering.
+  # Standard suspension with aftermarket 37s is NOT the factory 37 Performance Package.
+  # Camera height stays in liveCalibration; tire diameter is not a lens-height measurement.
+  # Sources, assumptions and activation: bluepilot/docs/raptor-profile.md.
+  FORD_F_150_RAPTOR_MK3 = FordCANFDPlatformConfig(
+    [FordCarDocs("Ford F-150 Raptor 2023", "Co-Pilot360 Assist 2.0")],
+    CarSpecs(mass=2611, wheelbase=3.694, steerRatio=17.2),
+  )
+  # End BluePilot
   FORD_F_150_LIGHTNING_MK1 = FordF150LightningPlatform(
     [FordCarDocs("Ford F-150 Lightning 2022-25", "Co-Pilot360 Assist 2.0")],
     CarSpecs(mass=2948, wheelbase=3.70, steerRatio=16.9),

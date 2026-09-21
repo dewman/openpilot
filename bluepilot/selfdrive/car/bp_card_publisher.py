@@ -161,6 +161,10 @@ def publish_controller_state_bp(CI, pm):
     # param-sourced telemetry made that undiagnosable from logs. bp_autocal_status carries
     # the controller's own view (armed/evidence/nudges, "off", "locked", or an error).
     cc = CI.CC
+    cs_bp.angleSmoothingEnabled = bool(getattr(cc, "smoothing_enabled", False))
+    cs_bp.angleSmoothingStrength = float(getattr(cc, "smoothing_strength", 0.0))
+    cs_bp.angleLowCurveFactor = float(getattr(cc, "user_dampening_factor", 1.0))
+    cs_bp.pinionCurvatureEnabled = bool(getattr(cc, "bp_pinion_curvature_enabled", False))
     if hasattr(cc, "autocal_enabled"):
       cs_bp.bmsAngleAutoCalibrate = bool(cc.autocal_enabled)
     status = getattr(cc, "bp_autocal_status", "")
