@@ -11,6 +11,15 @@ engagement state machines. Manager must receive the matching acknowledgement
 from selfdrived and fresh inactive control messages before restarting only
 `modeld`/`modeld_tinygrad` and `plannerd`.
 
+Factory-cruise status is relayed on `selfdriveStateSP` from selfdrived's existing
+`carState` socket. Manager checks both the relay and original source timestamp;
+missing/invalid CAN samples and receive timeouts inhibit switching. After the
+lock acknowledgement, the source sample and inactive control messages must
+postdate that acknowledgement. Manager must not subscribe to `carState`: the
+Ford onroad graph already occupies all 15 native msgq reader slots. A sixteenth
+reader repeatedly evicts existing consumers, breaking ordinary engagement even
+when no model switch is requested.
+
 `card`, `controlsd`, `selfdrived`, and `pandad` stay running. No CAN safety mode or
 vehicle ECU is restarted. This avoids intentionally interrupting the Ford CAN
 command loop; it does **not** establish that a moving-vehicle switch is free of
@@ -52,6 +61,14 @@ Isolated tests (also usable before building the native extensions):
 After building the native extensions, also run
 `bluepilot/tests/test_model_switch_integration.py`, which exercises the real
 stock/MADS state machines, typed Params, catalog fallback, and cached downloads.
+
+`bluepilot/tests/test_model_switch_messaging.py` uses isolated native msgq queues
+(never the live vehicle's sockets), the production manager subscriptions, and
+the 15-reader onroad fan-out. It reproduces the previous 16-reader eviction and
+checks uninterrupted delivery, normal stock/MADS engagement, both runner
+directions, loading lockout, and manual re-engagement. Message timing, inference,
+and process lifecycles are simulated; it does not launch the full driving stack
+or validate vehicle actuation.
 
 Before using this on a truck, build the changed Params/Cereal definitions and
 validate on a device/replay: both runner directions, cached/offline Favorites,

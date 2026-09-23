@@ -24,7 +24,7 @@ from openpilot.system.hardware import PC
 
 from openpilot.sunnypilot.system.params_migration import run_migration
 # BluePilot: manager owns model/planner handover; CAN and controls stay running.
-from openpilot.bluepilot.models.switch import ModelSwitchCoordinatorBP, SERVICES as MODEL_SWITCH_SERVICES
+from openpilot.bluepilot.models.switch import ModelSwitchCoordinatorBP, manager_submaster
 # End BluePilot
 
 
@@ -140,7 +140,7 @@ def manager_thread() -> None:
   ignore += [x for x in os.getenv("BLOCK", "").split(",") if len(x) > 0]
 
   # BluePilot: observe engagement acknowledgement and fresh post-restart outputs.
-  sm = messaging.SubMaster(['deviceState', 'carParams', 'pandaStates', *MODEL_SWITCH_SERVICES], poll='deviceState')
+  sm = manager_submaster()
   model_switch = ModelSwitchCoordinatorBP(params, managed_processes)
   # End BluePilot
   pm = messaging.PubMaster(['managerState'])

@@ -520,6 +520,9 @@ class SelfdriveD(CruiseHelper):
 
   def data_sample(self):
     _car_state = messaging.recv_one(self.car_state_sock)
+    # BluePilot: relay the existing subscription, rejecting timeout fallback data.
+    self.model_switch.observe_car_state(_car_state)
+    # End BluePilot
     CS = _car_state.carState if _car_state else self.CS_prev
 
     self.sm.update(0)
@@ -617,7 +620,7 @@ class SelfdriveD(CruiseHelper):
     ss_sp_msg.valid = True
     ss_sp = ss_sp_msg.selfdriveStateSP
     # BluePilot: manager also requires fresh inactive carControl before restarting.
-    ss_sp.bpModelSwitchToken = self.model_switch.token
+    self.model_switch.populate_state(ss_sp)
     # End BluePilot
     mads = ss_sp.mads
     mads.state = self.mads.state_machine.state

@@ -10,9 +10,25 @@ class ModelSwitchEngagementBP:
   def __init__(self, params):
     self.params = params
     self.token = ""
+    self.car_state_mono_time = 0
+    self.cruise_disengaged = False
     self.wait_for_button = params.get_bool(REENGAGE)
     self.held = set()
     self.released_after_unlock = False
+
+  def observe_car_state(self, message):
+    """Relay only a valid received sample, never selfdrived's timeout fallback."""
+    self.car_state_mono_time = 0
+    self.cruise_disengaged = False
+    if message is not None and message.valid and message.carState.canValid and not message.carState.canTimeout:
+      self.car_state_mono_time = message.logMonoTime
+      self.cruise_disengaged = not message.carState.cruiseState.enabled
+
+  def populate_state(self, state):
+    """Publish source freshness separately from the interlock acknowledgement."""
+    state.bpModelSwitchToken = self.token
+    state.bpModelSwitchCruiseDisengaged = self.cruise_disengaged
+    state.bpModelSwitchCarStateMonoTime = self.car_state_mono_time
 
   def update(self, CS, events):
     """Run before either engagement state machine, including initialization."""

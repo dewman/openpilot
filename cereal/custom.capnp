@@ -71,6 +71,10 @@ struct SelfdriveStateSP @0x81c2f05a394cf4af {
   intelligentCruiseButtonManagement @1 :IntelligentCruiseButtonManagement;
   # BluePilot: acknowledge the interlock after both engagement machines update.
   bpModelSwitchToken @2 :Text;
+  # Relay the existing selfdrived carState sample; never add a manager subscriber.
+  # False/zero defaults inhibit switching with an old or missing publisher.
+  bpModelSwitchCruiseDisengaged @3 :Bool;
+  bpModelSwitchCarStateMonoTime @4 :UInt64;
   # End BluePilot
 
   enum AudibleAlert {

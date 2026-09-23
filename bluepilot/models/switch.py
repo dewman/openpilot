@@ -15,9 +15,12 @@ STATUS = "BPModelSwitchStatus"
 REENGAGE = "BPModelSwitchReengage"
 ACTIVE = "ModelManager_ActiveBundle"
 PROCESSES = ("modeld", "modeld_tinygrad", "plannerd")
-CONTROL_SERVICES = ("selfdriveState", "selfdriveStateSP", "carControl", "carState")
+# The onroad graph already uses all 15 native msgq carState reader slots.
+# selfdrived relays factory-cruise status using its existing subscription.
+CONTROL_SERVICES = ("selfdriveState", "selfdriveStateSP", "carControl")
 OUTPUT_SERVICES = ("modelV2", "longitudinalPlan", "controlsState")
 SERVICES = (*CONTROL_SERVICES, *OUTPUT_SERVICES)
+
 
 STATUS_TEXT = {
   "waiting": "Model downloaded. Disengage steering and cruise control to apply.",
@@ -31,6 +34,12 @@ STATUS_TEXT = {
   "download_failed": "Model download failed. The current model is unchanged; check connectivity and retry.",
   "cancelled": "Model download cancelled. The current model is unchanged.",
 }
+
+
+def manager_submaster():
+  """Share the production subscription set with native IPC regression tests."""
+  import cereal.messaging as messaging
+  return messaging.SubMaster(['deviceState', 'carParams', 'pandaStates', *SERVICES], poll='deviceState')
 
 
 def switch_busy(params):
@@ -99,10 +108,16 @@ class ModelSwitchCoordinatorBP:
     return sm.all_checks(list(services)) and all(
       after < sm.logMonoTime[s] / 1e9 <= now and now - sm.logMonoTime[s] / 1e9 < 1.0 for s in services)
 
-  def _inactive(self, sm):
+  def _inactive(self, sm, after=0.0):
     cc = sm['carControl']
-    return not (sm['selfdriveState'].enabled or sm['selfdriveStateSP'].mads.enabled or
-                cc.enabled or cc.latActive or cc.longActive or sm['carState'].cruiseState.enabled)
+    state = sm['selfdriveStateSP']
+    sample_time = state.bpModelSwitchCarStateMonoTime / 1e9
+    # A freshly published relay must not disguise a stale/invalid carState sample.
+    # After locking, require a source sample newer than the acknowledgement too.
+    return (state.bpModelSwitchCruiseDisengaged and
+            after < sample_time <= sm.logMonoTime['selfdriveStateSP'] / 1e9 <= self.clock() and
+            self.clock() - sample_time < 1.0 and
+            not (sm['selfdriveState'].enabled or state.mads.enabled or cc.enabled or cc.latActive or cc.longActive))
 
   def _running_target(self, target):
     runner = target.get('runner', 'stock') if target else 'stock'
@@ -205,7 +220,8 @@ class ModelSwitchCoordinatorBP:
     # interlock, not merely after manager requested it. This closes an enable race
     # between separate selfdriveStateSP and carControl subscribers.
     acknowledged = (matching_token and self.acknowledged_at is not None and
-                    self._fresh(sm, CONTROL_SERVICES, max(self.started_at, self.acknowledged_at)) and self._inactive(sm))
+                    self._fresh(sm, CONTROL_SERVICES, max(self.started_at, self.acknowledged_at)) and
+                    self._inactive(sm, max(self.started_at, self.acknowledged_at)))
     if phase == 'locking':
       if acknowledged:
         self._restart()

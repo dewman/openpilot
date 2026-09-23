@@ -51,8 +51,7 @@ class Messages(dict):
       self[name] = event.init(name)
       self.logMonoTime[name] = 0
     self['deviceState'].started = True
-    self['carState'].vEgo = 30.0  # moving, not parked
-    self['carState'].gearShifter = 'drive'
+    self.cs = car.CarState.new_message(vEgo=30., gearShifter='drive', canValid=True)
 
   def all_checks(self, names):
     return not self.bad.intersection(names)
@@ -60,6 +59,8 @@ class Messages(dict):
   def stamp(self, now):
     for name in self:
       self.logMonoTime[name] = int(now * 1e9)
+    self['selfdriveStateSP'].bpModelSwitchCruiseDisengaged = not self.cs.cruiseState.enabled
+    self['selfdriveStateSP'].bpModelSwitchCarStateMonoTime = int(now * 1e9)
     self['longitudinalPlan'].modelMonoTime = int(now * 1e9)
     self['controlsState'].lateralPlanMonoTime = int(now * 1e9)
     self['controlsState'].longitudinalPlanMonoTime = int(now * 1e9)
@@ -141,7 +142,7 @@ def test_ready_download_waits_for_every_control_channel(engagement):
   elif engagement == 'mads':
     h.sm['selfdriveStateSP'].mads.enabled = True
   elif engagement == 'factory_cruise':
-    h.sm['carState'].cruiseState.enabled = True
+    h.sm.cs.cruiseState.enabled = True
   else:
     setattr(h.sm['carControl'], {'enabled': 'enabled', 'lateral': 'latActive', 'longitudinal': 'longActive'}[engagement], True)
   stage_bundle(h.params, h.candidate)
@@ -368,6 +369,67 @@ def test_selfdrived_restart_preserves_manual_reengagement_requirement(button):
 
 
 def test_lock_acknowledgement_schema_roundtrip():
-  msg = custom.SelfdriveStateSP.new_message(bpModelSwitchToken='transaction-123')
+  msg = custom.SelfdriveStateSP.new_message(bpModelSwitchToken='transaction-123',
+                                          bpModelSwitchCruiseDisengaged=True, bpModelSwitchCarStateMonoTime=123000000)
   with custom.SelfdriveStateSP.from_bytes(msg.to_bytes()) as decoded:
     assert decoded.bpModelSwitchToken == 'transaction-123'
+    assert decoded.bpModelSwitchCruiseDisengaged
+    assert decoded.bpModelSwitchCarStateMonoTime == 123000000
+
+
+@pytest.mark.parametrize('fault', ['missing', 'invalid', 'can_invalid', 'can_timeout', 'cruise_enabled'])
+def test_vehicle_relay_fails_closed_and_clears_previous_disengaged_sample(fault):
+  guard = ModelSwitchEngagementBP(Params())
+  msg = log.Event.new_message(logMonoTime=1000000000, valid=True)
+  msg.init('carState')
+  msg.carState.canValid = True
+  msg.carState.vEgo = 30.
+  guard.observe_car_state(msg)
+  state = custom.SelfdriveStateSP.new_message()
+  guard.populate_state(state)
+  assert state.bpModelSwitchCruiseDisengaged
+  assert state.bpModelSwitchCarStateMonoTime == msg.logMonoTime
+  if fault == 'invalid':
+    msg.valid = False
+  elif fault == 'can_invalid':
+    msg.carState.canValid = False
+  elif fault == 'can_timeout':
+    msg.carState.canTimeout = True
+  elif fault == 'cruise_enabled':
+    msg.carState.cruiseState.enabled = True
+  guard.observe_car_state(None if fault == 'missing' else msg)
+  guard.populate_state(state)
+  assert not state.bpModelSwitchCruiseDisengaged
+  if fault != 'cruise_enabled':
+    assert state.bpModelSwitchCarStateMonoTime == 0
+
+
+@pytest.mark.parametrize('phase', ['before_lock', 'locking', 'loading'])
+@pytest.mark.parametrize('fault', ['missing', 'stale', 'future', 'invalid', 'before_ack'])
+def test_fresh_relay_cannot_hide_unusable_vehicle_sample(phase, fault):
+  h = Harness()
+  if phase == 'before_lock':
+    stage_bundle(h.params, h.candidate)
+  else:
+    h.begin()
+    if phase == 'loading':
+      h.load()
+    else:
+      h.tick()  # receive the first acknowledgement
+  stops = {n: list(p.stops) for n, p in h.processes.items()}
+
+  def corrupt_source():
+    state = h.sm['selfdriveStateSP']
+    if fault == 'invalid':
+      state.bpModelSwitchCruiseDisengaged = False
+    else:
+      times = {'missing': 0, 'stale': h.now - 2, 'future': h.now + 1,
+               'before_ack': h.coordinator.acknowledged_at or 0}
+      state.bpModelSwitchCarStateMonoTime = int(times[fault] * 1e9)
+
+  for _ in range(6):
+    h.tick(before=corrupt_source)
+  assert {n: p.stops for n, p in h.processes.items()} == stops
+  transaction = h.params.get(TRANSACTION)
+  assert transaction is None if phase == 'before_lock' else transaction['phase'] == phase
+  assert h.params.get(STATUS) != 'ready'
