@@ -18,20 +18,37 @@ from openpilot.system.hardware.hw import Paths
 from cereal import messaging, custom
 from openpilot.sunnypilot.models.fetcher import ModelFetcher
 from openpilot.sunnypilot.models.helpers import get_active_bundle, validate_active_bundle, verify_file
+# BluePilot: downloads stage candidates instead of replacing the live selection.
+from openpilot.bluepilot.models.switch import PENDING, TRANSACTION, STATUS, displayed_bundle, stage_bundle
+from openpilot.bluepilot.models.favorites import FAVORITES, favorite_refs, include_pinned_favorites
+from openpilot.bluepilot.models.cache import ensure_artifact
+# End BluePilot
 
 
 class ModelManagerSP:
   """Manages model downloads and status reporting"""
 
-  def __init__(self):
+  # BluePilot: a separate cache worker reuses downloads without publishing/activating.
+  def __init__(self, cache_only=False):
     self.params = Params()
     self.model_fetcher = ModelFetcher(self.params)
-    self.pm = messaging.PubMaster(["modelManagerSP"])
+    self.cache_only = cache_only
+    self.pm = None if cache_only else messaging.PubMaster(["modelManagerSP"])
+    # End BluePilot
     self.available_models: list[custom.ModelManagerSP.ModelBundle] = []
     self.selected_bundle: custom.ModelManagerSP.ModelBundle = None
     self.active_bundle: custom.ModelManagerSP.ModelBundle = get_active_bundle(self.params)
     self._chunk_size = 128 * 1000  # 128 KB chunks
     self._download_start_times: dict[str, float] = {}  # Track start time per model
+
+  # BluePilot: prefetch yields to driving or foreground selection.
+  def _download_cancelled(self):
+    if self.cache_only:
+      return (self.params.get_bool('IsOnroad') or self.params.get('ModelManager_DownloadIndex') is not None or
+              self.params.get(PENDING) is not None or self.params.get(TRANSACTION) is not None or
+              self.selected_bundle.ref not in favorite_refs(self.params))
+    return self.params.get("ModelManager_DownloadIndex") is None
+  # End BluePilot
 
   def _sync_artifact_progress(self, source_artifact) -> None:
     """Mirror download progress to all artifacts sharing the same filename in the selected bundle."""
@@ -74,7 +91,9 @@ class ModelManagerSP:
             f.write(chunk)
             bytes_downloaded += len(chunk)
 
-            if self.params.get("ModelManager_DownloadIndex") is None:
+            # BluePilot: support cancellation of background favorite prefetch.
+            if self._download_cancelled():
+              # End BluePilot
               raise Exception("Download cancelled")
 
             if total_size > 0:
@@ -114,7 +133,9 @@ class ModelManagerSP:
             async for data in response.content.iter_chunked(self._chunk_size):
               f.write(data)
               chunk_downloaded += len(data)
-              if self.params.get("ModelManager_DownloadIndex") is None:
+              # BluePilot: support cancellation of background favorite prefetch.
+              if self._download_cancelled():
+                # End BluePilot
                 raise Exception("Download cancelled")
               intra = chunk_downloaded / max(chunk_size, 1)
               progress = min(99, (i + intra) / num_chunks * 100)
@@ -131,32 +152,23 @@ class ModelManagerSP:
     del self._download_start_times[artifact.fileName]
 
   async def _process_artifact(self, artifact, destination_path: str) -> None:
-    if not artifact.downloadUri.uri:
-      return None
-
     url = artifact.downloadUri.uri
-    expected_hash = artifact.downloadUri.sha256
     filename = artifact.fileName
-    full_path = os.path.join(destination_path, filename)
 
     try:
-      if await verify_file(full_path, expected_hash):
-        artifact.downloadProgress.status = custom.ModelManagerSP.DownloadStatus.cached
-        artifact.downloadProgress.progress = 100
-        artifact.downloadProgress.eta = 0
-        self._sync_artifact_progress(artifact)
-        self._report_status()
-        return
+      # BluePilot: verify locally first; failed downloads leave cached files intact.
+      async def download(staged_path):
+        if not url:
+          raise ValueError("Uncached model artifact has no download URL")
+        try:
+          await self._download_chunked(url, staged_path, artifact)
+        except (FileNotFoundError, aiohttp.ClientResponseError):
+          await self._download_file(url, staged_path, artifact)
 
-      try:
-        await self._download_chunked(url, full_path, artifact)
-      except (FileNotFoundError, aiohttp.ClientResponseError):
-        await self._download_file(url, full_path, artifact)
-
-      if not await verify_file(full_path, expected_hash):
-        raise ValueError(f"Hash validation failed for {filename}")
-
-      artifact.downloadProgress.status = custom.ModelManagerSP.DownloadStatus.downloaded
+      downloaded = await ensure_artifact(artifact, destination_path, verify_file, download, self._download_cancelled)
+      artifact.downloadProgress.status = (custom.ModelManagerSP.DownloadStatus.downloaded if downloaded else
+                                         custom.ModelManagerSP.DownloadStatus.cached)
+      # End BluePilot
       artifact.downloadProgress.progress = 100
       artifact.downloadProgress.eta = 0
       self._sync_artifact_progress(artifact)
@@ -164,9 +176,9 @@ class ModelManagerSP:
 
     except Exception as e:
       cloudlog.error(f"Error downloading {filename}: {str(e)}")
-      for f in [full_path] + [p for p in (os.path.join(destination_path, f) for f in os.listdir(destination_path)) if filename in p]:
-        if os.path.isfile(f):
-          os.remove(f)
+      # BluePilot: failed temporary downloads are cleaned by TemporaryDirectory;
+      # keep previously verified cache files (including other bundles' chunks).
+      # End BluePilot
       artifact.downloadProgress.status = custom.ModelManagerSP.DownloadStatus.failed
       artifact.downloadProgress.eta = 0
       self._sync_artifact_progress(artifact)
@@ -185,13 +197,19 @@ class ModelManagerSP:
 
   def _report_status(self) -> None:
     """Reports current status through messaging system"""
+    # BluePilot: the background cache worker has no modelManagerSP publisher.
+    if self.cache_only:
+      return
+    # End BluePilot
     msg = messaging.new_message('modelManagerSP', valid=True)
     model_manager_state = msg.modelManagerSP
     if self.selected_bundle:
       model_manager_state.selectedBundle = self.selected_bundle
 
-    if self.active_bundle:
-      model_manager_state.activeBundle = self.active_bundle
+    # BluePilot: during warmup report the previous selection, not the candidate.
+    if bundle := displayed_bundle(self.params):
+      model_manager_state.activeBundle = bundle
+    # End BluePilot
 
     model_manager_state.availableBundles = self.available_models
     self.pm.send('modelManagerSP', msg)
@@ -203,9 +221,36 @@ class ModelManagerSP:
     os.makedirs(destination_path, exist_ok=True)
 
     try:
+      # BluePilot: downloads must not overwrite artifacts needed for rollback.
+      protected = {}
+      if active := get_active_bundle(self.params):
+        for model in active.models:
+          for artifact in (model.metadata, model.artifact):
+            if artifact.fileName:
+              protected[artifact.fileName] = artifact.downloadUri.sha256
+      for bundle in (self.params.get(FAVORITES) or {}).values():
+        for model in bundle.get('models', []):
+          for artifact in (model.get('metadata', {}), model.get('artifact', {})):
+            if artifact.get('fileName'):
+              filename = artifact['fileName']
+              sha = artifact.get('downloadUri', {}).get('sha256', '')
+              if filename in protected and protected[filename] != sha:
+                raise ValueError("Favorite models have conflicting artifact filenames")
+              protected[filename] = sha
+      for model in self.selected_bundle.models:
+        for artifact in (model.metadata, model.artifact):
+          if artifact.fileName in protected and artifact.downloadUri.sha256 != protected[artifact.fileName]:
+            raise ValueError("Model download would overwrite an active model artifact")
+          if artifact.fileName:
+            protected[artifact.fileName] = artifact.downloadUri.sha256
+      # End BluePilot
       seen_artifacts: set[str] = set()
       for model in self.selected_bundle.models:
         for artifact in (model.metadata, model.artifact):
+          # BluePilot: stop prefetch before hashing another large artifact onroad.
+          if self.cache_only and self._download_cancelled():
+            raise RuntimeError("Favorite prefetch paused")
+          # End BluePilot
           if not artifact.fileName:
             continue
           if artifact.fileName in seen_artifacts:
@@ -216,9 +261,11 @@ class ModelManagerSP:
             seen_artifacts.add(artifact.fileName)
             await self._process_artifact(artifact, destination_path)
 
-      self.active_bundle = self.selected_bundle
-      self.active_bundle.status = custom.ModelManagerSP.DownloadStatus.downloaded
-      self.params.put("ModelManager_ActiveBundle", self.active_bundle.to_dict(), block=True)
+      # BluePilot: only manager may activate a verified candidate.
+      self.selected_bundle.status = custom.ModelManagerSP.DownloadStatus.downloaded
+      if not self.cache_only:
+        stage_bundle(self.params, self.selected_bundle.to_dict())
+      # End BluePilot
       self.selected_bundle = None
 
     except Exception:
@@ -238,19 +285,40 @@ class ModelManagerSP:
 
     while True:
       try:
-        self.available_models = self.model_fetcher.get_available_bundles()
-        validate_active_bundle(self.params, self.available_models)
+        # BluePilot: all catalog networking runs in the independent cache worker.
+        self.available_models = include_pinned_favorites(self.params, self.model_fetcher.get_available_bundles(allow_network=False))
+        # End BluePilot
+        # BluePilot: never mutate the running selection or rollback target onroad.
+        if not self.params.get_bool("IsOnroad") and self.params.get(TRANSACTION) is None:
+          validate_active_bundle(self.params, self.available_models)
+        # End BluePilot
         self.active_bundle = get_active_bundle(self.params)
 
         if (index_to_download := self.params.get("ModelManager_DownloadIndex")) is not None:
+          # BluePilot: serialize requests through activation and rollback.
+          if self.params.get(PENDING) is not None or self.params.get(TRANSACTION) is not None:
+            self.params.remove("ModelManager_DownloadIndex")
+            rk.keep_time()
+            continue
+          # End BluePilot
           if model_to_download := next((model for model in self.available_models if model.index == index_to_download), None):
             try:
               self.download(model_to_download, Paths.model_root())
             except Exception as e:
               cloudlog.exception(e)
+              # BluePilot: leave a durable, visible outcome without changing the model.
+              cancelled = self.params.get('ModelManager_DownloadIndex') is None
+              self.params.put(STATUS, 'cancelled' if cancelled else 'download_failed', block=True)
+              if cancelled:
+                self.selected_bundle = None
+              # End BluePilot
             finally:
               self.params.remove("ModelManager_DownloadIndex")
-              self.selected_bundle = None
+          # BluePilot: a stale catalog index must not permanently disable selection.
+          else:
+            self.params.remove("ModelManager_DownloadIndex")
+            self.params.put(STATUS, 'download_failed', block=True)
+          # End BluePilot
 
         if self.params.get("ModelManager_ClearCache"):
           self.clear_model_cache()
@@ -268,8 +336,20 @@ class ModelManagerSP:
     Clears the model cache directory of all files except those in the active model bundle.
     """
 
+    # BluePilot: keep running, staged, and rollback artifacts intact.
+    if self.params.get_bool("IsOnroad") or self.params.get(PENDING) is not None or self.params.get(TRANSACTION) is not None:
+      return
+    # End BluePilot
+
     # Get list of files used by active model bundle
     active_files = []
+    # BluePilot: retain complete favorite artifacts, including pinned catalog entries.
+    for bundle in (self.params.get(FAVORITES) or {}).values():
+      for model in bundle.get('models', []):
+        for artifact in (model.get('artifact', {}), model.get('metadata', {})):
+          if artifact.get('fileName'):
+            active_files.append(artifact['fileName'])
+    # End BluePilot
     if self.active_bundle is not None: # When the default model is active
       for model in self.active_bundle.models:
         if hasattr(model, 'artifact') and model.artifact.fileName:

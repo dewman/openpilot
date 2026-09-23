@@ -26,6 +26,10 @@ from openpilot.system.ui.sunnypilot.lib.utils import NoElideButtonAction
 from openpilot.system.ui.sunnypilot.widgets.list_view import ListItemSP, toggle_item_sp, option_item_sp
 from openpilot.system.ui.sunnypilot.widgets.progress_bar import progress_item
 from openpilot.system.ui.sunnypilot.widgets.tree_dialog import TreeOptionDialog, TreeNode, TreeFolder
+# BluePilot: onroad selection uses the manager-owned model handover.
+from openpilot.bluepilot.models.switch import STATUS, STATUS_TEXT, TRANSACTION, stage_bundle, switch_busy
+from openpilot.bluepilot.models.favorites import CACHE_STATUS, favorite_refs, offline_status
+# End BluePilot
 
 if gui_app.sunnypilot_ui():
   from openpilot.system.ui.sunnypilot.widgets.list_view import button_item_sp as button_item
@@ -72,6 +76,9 @@ class ModelsLayout(Widget):
       action_item=NoElideButtonAction(tr("CLEAR")),
       callback=self._clear_cache
     )
+    # BluePilot: show preparation status before relying on Favorites offline.
+    self.favorite_cache_item = ListItemSP(title=tr("Offline Favorites"), description="", description_visible=True)
+    # End BluePilot
 
     self.cancel_download_item = button_item(tr("Cancel Download"), tr("Cancel"), "", lambda: ui_state.params.remove("ModelManager_DownloadIndex"))
 
@@ -96,6 +103,9 @@ class ModelsLayout(Widget):
     self.items = [self.current_model_item, self.cancel_download_item, self.supercombo_label, self.vision_label,
                   self.policy_label, self.off_policy_label, self.on_policy_label, self.refresh_item, self.clear_cache_item, self.lane_turn_desire_toggle,
                   self.lane_turn_value_control, self.lagd_toggle, self.delay_control]
+    # BluePilot: background prefetch does not activate models.
+    self.items.insert(1, self.favorite_cache_item)
+    # End BluePilot
 
   def _update_lagd_description(self, lagd_toggle: bool):
     desc = tr("Enable this for the car to learn and adapt its steering response time. Disable to use a fixed steering response time. " +
@@ -125,8 +135,10 @@ class ModelsLayout(Widget):
         ui_state.params.put_bool("ModelManager_ClearCache", True)
         self.clear_cache_item.action_item.set_value(f"{self.calculate_cache_size():.2f} MB")
 
-    dialog = ConfirmDialog(tr("This will delete ALL downloaded models from the cache except the currently active model. Are you sure?"),
+    # BluePilot: Favorites are pinned for offline use.
+    dialog = ConfirmDialog(tr("Delete downloaded models except the active model and Favorites?"),
                            tr("Clear Cache"), callback=_callback)
+    # End BluePilot
     gui_app.push_widget(dialog)
 
   def _handle_bundle_download_progress(self):
@@ -178,7 +190,9 @@ class ModelsLayout(Widget):
   @staticmethod
   def _show_reset_params_dialog():
     def _callback(response):
-      if response == DialogResult.CONFIRM:
+      # BluePilot: a dialog opened offroad must not reset calibration onroad.
+      if response == DialogResult.CONFIRM and ui_state.is_offroad():
+        # End BluePilot
         ui_state.params.remove("CalibrationParams")
         ui_state.params.remove("LiveTorqueParameters")
     msg = tr("Model download has started in the background. We suggest resetting calibration. Would you like to do that now?")
@@ -188,19 +202,36 @@ class ModelsLayout(Widget):
   def _on_model_selected(self, result):
     if result != DialogResult.CONFIRM:
       return
+    # BluePilot: recheck after the picker, not only when enabling its button.
+    if not self.model_selection_allowed():
+      self.model_dialog = None
+      gui_app.push_widget(alert_dialog(tr("Disengage steering and cruise control and wait for any pending model change to finish.")))
+      return
+    # End BluePilot
     selected_ref = self.model_dialog.selection_ref
     if selected_ref == "Default":
-      ui_state.params.remove("ModelManager_ActiveBundle")
-      self._show_reset_params_dialog()
+      # BluePilot: default is also a coordinated model switch.
+      stage_bundle(ui_state.params, {})
+      if ui_state.is_offroad():
+        self._show_reset_params_dialog()
+      # End BluePilot
     elif selected_bundle := next((bundle for bundle in self.model_manager.availableBundles if bundle.ref == selected_ref), None):
       ui_state.params.put("ModelManager_DownloadIndex", selected_bundle.index)
-      if self.model_manager.activeBundle and selected_bundle.generation != self.model_manager.activeBundle.generation:
+      # BluePilot: preserve calibration during an onroad handover.
+      if ui_state.is_offroad() and self.model_manager.activeBundle and selected_bundle.generation != self.model_manager.activeBundle.generation:
         self._show_reset_params_dialog()
+      # End BluePilot
     self.model_dialog = None
 
   @staticmethod
   def _bundle_to_node(bundle):
-    return TreeNode(bundle.ref, {'display_name': bundle.displayName, 'short_name': bundle.internalName})
+    # BluePilot: make offline readiness visible in the model picker.
+    name = bundle.displayName
+    if bundle.ref in favorite_refs(ui_state.params):
+      ready = (ui_state.params.get(CACHE_STATUS) or {}).get(bundle.ref) == 'ready'
+      name += tr(" [Offline ready]" if ready else " [Not cached]")
+    return TreeNode(bundle.ref, {'display_name': name, 'short_name': bundle.internalName})
+    # End BluePilot
 
   def _get_folders(self, favorites):
     bundles = self.model_manager.availableBundles
@@ -219,6 +250,10 @@ class ModelsLayout(Widget):
     return folders_list
 
   def _handle_current_model_clicked(self):
+    # BluePilot: also guard direct invocation and dialogs opened during a handover.
+    if not self.model_selection_allowed():
+      return
+    # End BluePilot
     favs = ui_state.params.get("ModelManager_Favs")
     favorites = set(favs.split(';')) if favs else set()
     folders_list = self._get_folders(favorites)
@@ -242,17 +277,34 @@ class ModelsLayout(Widget):
       self.lane_turn_value_control.action_item.value_change_step = new_step
 
     self._update_lagd_description(live_delay)
+    # BluePilot: disk cache survives reboots and does not keep extra models in RAM.
+    self.favorite_cache_item.set_description(tr(offline_status(ui_state.params)))
+    # End BluePilot
     self.model_manager = ui_state.sm["modelManagerSP"]
     self._handle_bundle_download_progress()
     active_name = self.model_manager.activeBundle.internalName if self.model_manager and self.model_manager.activeBundle.ref else f"{DEFAULT_MODEL} (Default)"
     self.current_model_item.action_item.set_value(active_name)
 
-    if not ui_state.is_offroad():
-      self.current_model_item.action_item.set_enabled(False)
-      self.current_model_item.set_description(tr("Only available when vehicle is off, or always offroad mode is on"))
-    else:
-      self.current_model_item.action_item.set_enabled(True)
-      self.current_model_item.set_description("")
+    # BluePilot: no speed/gear restriction; activation has a separate backend interlock.
+    self.current_model_item.action_item.set_enabled(self.model_selection_allowed())
+    description = STATUS_TEXT.get(ui_state.params.get(STATUS), "")
+    if ui_state.engaged or ui_state.sm['carState'].cruiseState.enabled:
+      description = "Disengage steering and cruise control to select a model."
+    elif self._is_downloading():
+      description = "Downloading model. Keep steering and cruise control disengaged to apply when ready."
+    elif not description:
+      description = "Disengage steering and cruise control, select a model, wait until ready, then re-engage."
+    self.current_model_item.set_description(tr(description))
+    if ui_state.params.get(TRANSACTION) is not None:
+      self.current_model_item.action_item.set_value(tr("Switching model…"))
+    self.clear_cache_item.action_item.set_enabled(ui_state.is_offroad() and not switch_busy(ui_state.params))
+    # End BluePilot
+
+  # BluePilot: shared by TICI/MICI; confirmation must check again after selection.
+  @staticmethod
+  def model_selection_allowed():
+    return not (ui_state.engaged or ui_state.sm['carState'].cruiseState.enabled or switch_busy(ui_state.params))
+  # End BluePilot
 
   def _render(self, rect):
     self._scroller.render(rect)

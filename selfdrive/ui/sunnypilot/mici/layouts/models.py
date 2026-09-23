@@ -17,6 +17,10 @@ from openpilot.system.ui.lib.multilang import tr
 from openpilot.system.ui.widgets import Widget
 from openpilot.system.ui.widgets.label import UnifiedLabel
 from openpilot.system.ui.widgets.scroller import NavScroller
+# BluePilot: use the same staged activation path as the TICI selector.
+from openpilot.bluepilot.models.switch import STATUS, STATUS_TEXT, TRANSACTION, stage_bundle
+from openpilot.bluepilot.models.favorites import CACHE_STATUS, favorite_refs
+# End BluePilot
 
 class CurrentModelInfo(Widget):
   def __init__(self):
@@ -115,11 +119,19 @@ class ModelsLayoutMici(NavScroller):
     self._show_selection_view(folder_buttons, self._reset_main_view)
 
   def _select_model(self, bundle):
+    # BluePilot: guard the final selection, including an already-open picker.
+    if not ModelsLayout.model_selection_allowed():
+      self._reset_main_view()
+      return
+    # End BluePilot
     ui_state.params.put("ModelManager_DownloadIndex", bundle.index)
     self._reset_main_view()
 
   def _select_default(self):
-    ui_state.params.remove("ModelManager_ActiveBundle")
+    # BluePilot: default changes require the same interlock and restart.
+    if ModelsLayout.model_selection_allowed():
+      stage_bundle(ui_state.params, {})
+    # End BluePilot
     self._reset_main_view()
 
   def _select_folder(self, folder_name):
@@ -132,6 +144,11 @@ class ModelsLayoutMici(NavScroller):
     btns = []
     for bundle in bundles:
       txt = bundle.displayName.lower()
+      # BluePilot: mark favorites that are ready without network access.
+      if bundle.ref in favorite_refs(ui_state.params):
+        ready = (ui_state.params.get(CACHE_STATUS) or {}).get(bundle.ref) == 'ready'
+        txt += tr(" [offline ready]" if ready else " [not cached]")
+      # End BluePilot
       btn = BigButton(txt)
       btn.set_click_callback(lambda b=bundle: self._select_model(b))
       btns.append(btn)
@@ -152,7 +169,9 @@ class ModelsLayoutMici(NavScroller):
   def _update_state(self):
     super()._update_state()
 
-    self.select_model_btn.set_enabled(ui_state.is_offroad())
+    # BluePilot: allow selection onroad with both assistance channels disengaged.
+    self.select_model_btn.set_enabled(ModelsLayout.model_selection_allowed())
+    # End BluePilot
     self.cancel_download_btn.set_visible(False)
     self.current_model_info.current_model_header._shimmer = False
     self.current_model_info.info_header._shimmer = False
@@ -174,6 +193,13 @@ class ModelsLayoutMici(NavScroller):
     self.current_model_info.current_model_text.set_text(model_text)
     self.current_model_info.info_header.set_text(tr("cache size"))
     self.current_model_info.info_text.set_text(f"{ModelsLayout.calculate_cache_size():.2f} MB")
+    # BluePilot: distinguish the last running model from a candidate being loaded.
+    if status := STATUS_TEXT.get(ui_state.params.get(STATUS)):
+      self.current_model_info.info_header.set_text(tr("model status"))
+      self.current_model_info.info_text.set_text(tr(status))
+    if ui_state.params.get(TRANSACTION) is not None:
+      self.current_model_info.current_model_header.set_text(tr("switching model"))
+    # End BluePilot
 
     if manager.selectedBundle and manager.selectedBundle.status == custom.ModelManagerSP.DownloadStatus.failed:
       self.current_model_info.info_header.set_text(tr("error") + self._download_progress)
@@ -199,4 +225,3 @@ class ModelsLayoutMici(NavScroller):
       self.current_model_info.info_header.set_text(tr("progress") + self._download_progress)
       self.current_model_info.info_header._shimmer = True
       self.current_model_info.info_text.set_text(f"{progress/count:.2f}%")
-

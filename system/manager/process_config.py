@@ -176,7 +176,9 @@ procs = [
 # sunnypilot
 procs += [
   # Models
-  PythonProcess("models_manager", "sunnypilot.models.manager", only_offroad),
+  # BluePilot: allow staged downloads onroad; manager coordinates actual activation.
+  PythonProcess("models_manager", "sunnypilot.models.manager", always_run),
+  # End BluePilot
   NativeProcess("modeld_tinygrad", "sunnypilot/modeld_v2", ["./modeld"], and_(only_onroad, is_tinygrad_model)),
 
   # Backup
@@ -189,6 +191,10 @@ procs += [
   # locationd
   NativeProcess("locationd_llk", "sunnypilot/selfdrive/locationd", ["./locationd"], only_onroad),
 ]
+
+# BluePilot: background catalog refresh and offline favorite preparation.
+procs += [PythonProcess("bp_model_cache", "bluepilot.models.favorites", always_run)]
+# End BluePilot
 
 # BluePilot: portal and route preprocessor processes
 if is_bluepilot():

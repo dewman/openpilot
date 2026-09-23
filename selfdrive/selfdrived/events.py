@@ -217,6 +217,17 @@ def invalid_lkas_setting_alert(CP: car.CarParams, CS: car.CarState, sm: messagin
 
 
 EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
+  # BluePilot: a model handover is explicitly locked, never a soft-disable grace period.
+  EventName.bpModelSwitch: {
+    ET.NO_ENTRY: NoEntryAlert("Model switch in progress"),
+    ET.IMMEDIATE_DISABLE: ImmediateDisableAlert("Model switch in progress"),
+    ET.PERMANENT: NormalPermanentAlert("Model switch — drive manually", "Steering and cruise assistance unavailable"),
+  },
+  EventName.bpModelSwitchReady: {
+    ET.NO_ENTRY: NoEntryAlert("Press SET/RESUME or LKAS to engage"),
+    ET.PERMANENT: NormalPermanentAlert("Model ready", "Press SET/RESUME or LKAS when ready"),
+  },
+  # End BluePilot
   # ********** events with no alerts **********
 
   EventName.stockFcw: {},

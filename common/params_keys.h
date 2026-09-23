@@ -198,6 +198,14 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"ModelManager_Favs", {PERSISTENT | BACKUP, STRING}},
     {"ModelManager_LastSyncTime", {CLEAR_ON_MANAGER_START | CLEAR_ON_OFFROAD_TRANSITION, INT, "0"}},
     {"ModelManager_ModelsCache", {PERSISTENT | BACKUP, JSON}},
+    // BluePilot: staged model activation and crash-persistent engagement interlock.
+    {"BPModelSwitchPending", {CLEAR_ON_MANAGER_START, JSON}},
+    {"BPModelSwitchTransaction", {PERSISTENT, JSON}},
+    {"BPModelSwitchReengage", {PERSISTENT, BOOL}},
+    {"BPModelSwitchStatus", {PERSISTENT, STRING}},
+    {"BPFavoriteModelBundles", {PERSISTENT, JSON}},
+    {"BPFavoriteModelStatus", {PERSISTENT, JSON}},
+    // End BluePilot
 
     // Neural Network Lateral Control
     {"NeuralNetworkLateralControl", {PERSISTENT | BACKUP, BOOL, "0"}},

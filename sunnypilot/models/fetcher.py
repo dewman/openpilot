@@ -154,9 +154,13 @@ class ModelFetcher:
 
     return None
 
-  def get_available_bundles(self) -> list[custom.ModelManagerSP.ModelBundle]:
+  # BluePilot: activation reads the local catalog without waiting on the network.
+  def get_available_bundles(self, allow_network: bool = True) -> list[custom.ModelManagerSP.ModelBundle]:
     """Gets the list of available models, with smart cache handling"""
     cached_data, is_expired = self.model_cache.get()
+    if not allow_network:
+      return self.model_parser.parse_models(cached_data)
+    # End BluePilot
 
     if cached_data and not is_expired:
       cloudlog.debug("Using valid cached models data")

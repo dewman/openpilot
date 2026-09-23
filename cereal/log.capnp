@@ -133,6 +133,11 @@ struct OnroadEvent @0xc4fa6047f024e718 {
     excessiveActuation @96;
     audioFeedback @97;
 
+    # BluePilot: model handover inhibits both stock and MADS engagement.
+    bpModelSwitch @100;
+    bpModelSwitchReady @101;
+    # End BluePilot
+
     soundsUnavailableDEPRECATED @47;
   }
 }

@@ -5,7 +5,6 @@ This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
 
-import hashlib
 import os
 import pickle
 from pathlib import Path
@@ -27,11 +26,10 @@ _LAST_VALIDATED_RAW = None
 
 
 def _compute_hash(file_path: str) -> str | None:
-  from openpilot.common.file_chunker import read_file_chunked
-  try:
-    return hashlib.sha256(read_file_chunked(file_path)).hexdigest().lower()
-  except FileNotFoundError:
-    return None
+  # BluePilot: onroad verification must not allocate another model-sized buffer.
+  from openpilot.bluepilot.models.cache import file_sha256
+  return file_sha256(file_path)
+  # End BluePilot
 
 
 async def verify_file(file_path: str, expected_hash: str) -> bool:

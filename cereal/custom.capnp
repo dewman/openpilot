@@ -69,6 +69,9 @@ struct LeadData {
 struct SelfdriveStateSP @0x81c2f05a394cf4af {
   mads @0 :ModularAssistiveDrivingSystem;
   intelligentCruiseButtonManagement @1 :IntelligentCruiseButtonManagement;
+  # BluePilot: acknowledge the interlock after both engagement machines update.
+  bpModelSwitchToken @2 :Text;
+  # End BluePilot
 
   enum AudibleAlert {
     none @0;

@@ -30,6 +30,9 @@ from openpilot.sunnypilot.selfdrive.car.car_specific import CarSpecificEventsSP
 from openpilot.sunnypilot.selfdrive.car.cruise_helpers import CruiseHelper
 from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.controller import IntelligentCruiseButtonManagement
 from openpilot.sunnypilot.selfdrive.selfdrived.events import EventsSP
+# BluePilot: acknowledged model-switch engagement interlock.
+from openpilot.bluepilot.models.engagement import ModelSwitchEngagementBP
+# End BluePilot
 
 REPLAY = "REPLAY" in os.environ
 SIMULATION = "SIMULATION" in os.environ
@@ -179,6 +182,9 @@ class SelfdriveD(CruiseHelper):
     self.events_sp_prev = []
 
     self.mads = ModularAssistiveDrivingSystem(self)
+    # BluePilot: keep the interlock alive across the model/planner restart.
+    self.model_switch = ModelSwitchEngagementBP(self.params)
+    # End BluePilot
     self.icbm = IntelligentCruiseButtonManagement(self.CP, self.CP_SP)
 
     self.car_events_sp = CarSpecificEventsSP(self.CP, self.CP_SP)
@@ -610,6 +616,9 @@ class SelfdriveD(CruiseHelper):
     ss_sp_msg = messaging.new_message('selfdriveStateSP')
     ss_sp_msg.valid = True
     ss_sp = ss_sp_msg.selfdriveStateSP
+    # BluePilot: manager also requires fresh inactive carControl before restarting.
+    ss_sp.bpModelSwitchToken = self.model_switch.token
+    # End BluePilot
     mads = ss_sp.mads
     mads.state = self.mads.state_machine.state
     mads.enabled = self.mads.enabled
@@ -634,6 +643,9 @@ class SelfdriveD(CruiseHelper):
   def step(self):
     CS = self.data_sample()
     self.update_events(CS)
+    # BluePilot: add after update_events so early returns cannot bypass the lock.
+    self.model_switch.update(CS, self.events)
+    # End BluePilot
     if not self.CP.passive and self.initialized:
       self.enabled, self.active = self.state_machine.update(self.events)
     if not self.CP.notCar:

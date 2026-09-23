@@ -23,6 +23,9 @@ from openpilot.system.hardware.hw import Paths
 from openpilot.system.hardware import PC
 
 from openpilot.sunnypilot.system.params_migration import run_migration
+# BluePilot: manager owns model/planner handover; CAN and controls stay running.
+from openpilot.bluepilot.models.switch import ModelSwitchCoordinatorBP, SERVICES as MODEL_SWITCH_SERVICES
+# End BluePilot
 
 
 def manager_init() -> None:
@@ -136,7 +139,10 @@ def manager_thread() -> None:
     ignore.append("pandad")
   ignore += [x for x in os.getenv("BLOCK", "").split(",") if len(x) > 0]
 
-  sm = messaging.SubMaster(['deviceState', 'carParams', 'pandaStates'], poll='deviceState')
+  # BluePilot: observe engagement acknowledgement and fresh post-restart outputs.
+  sm = messaging.SubMaster(['deviceState', 'carParams', 'pandaStates', *MODEL_SWITCH_SERVICES], poll='deviceState')
+  model_switch = ModelSwitchCoordinatorBP(params, managed_processes)
+  # End BluePilot
   pm = messaging.PubMaster(['managerState'])
 
   write_onroad_params(False, params)
@@ -166,6 +172,9 @@ def manager_thread() -> None:
     started_prev = started
     ignition_prev = ignition
 
+    # BluePilot: stop/reselect only after selfdrived acknowledges the engagement lock.
+    model_switch.update(sm)
+    # End BluePilot
     ensure_running(managed_processes.values(), started, params=params, CP=sm['carParams'], not_run=ignore)
 
     running = ' '.join("{}{}\u001b[0m".format("\u001b[32m" if p.proc.is_alive() else "\u001b[31m", p.name)
