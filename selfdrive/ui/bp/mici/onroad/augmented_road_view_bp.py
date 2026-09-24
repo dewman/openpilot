@@ -16,8 +16,8 @@ from openpilot.selfdrive.ui.bp.mici.onroad.complication import MiciComplication
 from openpilot.selfdrive.ui.bp.mici.onroad.confidence_ball_bp import ConfidenceBallMiciBP
 from openpilot.selfdrive.ui.ui_state import ui_state, UIStatus
 from openpilot.selfdrive.ui.bp.lib.ui_debug_logger import bp_ui_log
-# BluePilot: swipe-down shortcut to lateral debug screen
-from openpilot.selfdrive.ui.bp.mici.onroad.lateral_debug_mici import LateralDebugMici
+# BluePilot: swipe-down shortcut to the existing lateral tuning panel
+from openpilot.selfdrive.ui.bp.mici.layouts.settings.lateral_mici import LateralLayoutMici
 from openpilot.selfdrive.ui.bp.mici.onroad.rad_racer_mici import RadRacerThemeMici
 from openpilot.system.ui.widgets import Widget
 # BluePilot: unified theme selector (BPThemePack param)
@@ -26,7 +26,7 @@ from openpilot.selfdrive.ui.bp.lib import theme_pack, theme_scene
 # BluePilot: Margin to keep confidence ball inside the MICI rounded border
 MICI_BALL_BORDER_MARGIN = 25  # half of 50px MICI border thickness
 
-_SWIPE_DOWN_THRESHOLD = 80  # minimum downward travel (px) to trigger lateral debug
+_SWIPE_DOWN_THRESHOLD = 80  # minimum downward travel (px) to open tuning
 
 
 class _VerticalSwipeDetector(Widget):
@@ -89,7 +89,7 @@ class MiciAugmentedRoadViewBP(MiciCameraViewBP, AugmentedRoadView, BlindspotRend
     self._complication = MiciComplication()
 
     self._model_renderer = ModelRendererBP()
-    self._lat_debug: LateralDebugMici | None = None
+    self._lateral_tuning: LateralLayoutMici | None = None
     self._swipe_detector = _VerticalSwipeDetector(self._on_swipe_down)
 
     # BluePilot: Rad Racer 8-bit theme (MICI-scaled; no gauge cluster on the small screen)
@@ -98,18 +98,13 @@ class MiciAugmentedRoadViewBP(MiciCameraViewBP, AugmentedRoadView, BlindspotRend
   def _on_swipe_down(self):
     if not ui_state.is_onroad():
       return
-    # Guard against double-push. When the car leaves standstill, main.py calls
-    # pop_widgets_to() which dismisses LateralDebugMici without invoking back_callback,
-    # so a bool flag would get stranded True. Checking widget_in_stack() handles that.
-    if self._lat_debug is not None and gui_app.widget_in_stack(self._lat_debug):
+    # Reuse the panel so its offroad callback is registered only once.
+    # Check the actual stack because automatic dismissals do not invoke back callbacks.
+    if self._lateral_tuning is None:
+      self._lateral_tuning = LateralLayoutMici()
+    if gui_app.widget_in_stack(self._lateral_tuning):
       return
-
-    def _dismiss():
-      self._lat_debug = None
-      gui_app.pop_widget()
-
-    self._lat_debug = LateralDebugMici(back_callback=_dismiss)
-    gui_app.push_widget(self._lat_debug)
+    gui_app.push_widget(self._lateral_tuning)
 
   def _handle_mouse_release(self, mouse_pos):
     # BluePilot: suppress click-to-home when a swipe-down was detected by the detector

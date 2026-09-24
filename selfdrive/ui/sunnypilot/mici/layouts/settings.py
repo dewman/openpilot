@@ -16,6 +16,9 @@ if is_bluepilot():
   from openpilot.selfdrive.ui.bp.mici.widgets.button_bp import BigButtonBP as BigButton
   from openpilot.selfdrive.ui.bp.mici.layouts.settings.bluepilot import BluePilotLayoutMici
   from openpilot.selfdrive.ui.bp.mici.layouts.settings.vehicle_mici import VehicleLayoutMici
+  # BluePilot: expose SunnyLink's steering-delay controls in the comma 4 Models menu.
+  from openpilot.selfdrive.ui.bp.mici.layouts.settings.models_bp import ModelsLayoutMiciBP as ModelsLayoutMici
+  # End BluePilot
 
 ICON_SIZE = 70
 
