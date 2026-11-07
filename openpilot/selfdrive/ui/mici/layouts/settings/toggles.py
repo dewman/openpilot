@@ -39,6 +39,7 @@ class TogglesLayoutMici(NavScroller):
 
 
     self._scroller.add_widgets([
+      enable_openpilot,  # BluePilot: put the existing assistance toggle first.
       self._personality_toggle,
       self._initial_cruise_speed,
       is_metric_toggle,
@@ -46,7 +47,6 @@ class TogglesLayoutMici(NavScroller):
       always_on_dm_toggle,
       record_front,
       record_mic,
-      enable_openpilot,
     ])
 
     # Toggle lists
