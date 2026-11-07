@@ -96,4 +96,7 @@ def offline_status(params):
   refs = favorite_refs(params)
   statuses = params.get(CACHE_STATUS) or {}
   count = sum(isinstance(statuses.get(ref), dict) and statuses[ref].get('state') == 'ready' for ref in refs)
-  return f'{count}/{len(refs)} Favorites cached. Remaining downloads run offroad.'
+  from openpilot.bluepilot.models.warmup import switch_ready_bundle
+  pinned = pinned_favorites(params)
+  prepared = sum(switch_ready_bundle(params, entry['bundle'], entry['source']) for entry in pinned.values())
+  return f'{count}/{len(refs)} Favorites cached; {prepared} ready to switch. Preparation runs offroad.'

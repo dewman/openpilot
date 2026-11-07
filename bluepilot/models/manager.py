@@ -112,9 +112,11 @@ class ModelManagerBP(ModelManagerSP):
     for source in ACTIVE_BUNDLE_KEYS:
       if bundle := get_selected_bundle(self.params, source):
         keep.update(artifacts(bundle.to_dict()))
+    from openpilot.bluepilot.models.warmup import marker_path
     for entry in self._pin_favorites().values():
       keep.update(artifacts(entry['bundle']))
+      keep.add(marker_path(entry['bundle'], entry['source'], Paths.model_root()).name)
     for name in os.listdir(Paths.model_root()):
       path = os.path.join(Paths.model_root(), name)
-      if os.path.isfile(path) and name not in keep and name.removesuffix('.cache') not in keep:
+      if os.path.isfile(path) and name not in keep and not any(name.startswith(f'{base}.') and name.endswith('.cache') for base in keep):
         os.unlink(path)

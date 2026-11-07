@@ -103,6 +103,25 @@ class TestPlainArtifact(OpenpilotTestCase):
     with mock.patch.object(helpers, "tinygrad_identity", return_value="another tinygrad"):
       assert not cache_is_fresh(path)
 
+  def test_camera_variants_keep_independent_reusable_caches(self):
+    path = self.artifact("camera_variants")
+
+    def camera_variant(size):
+      def extend(parts, extras):
+        header, blob = parts["run"]
+        return {"run": (header | {"camera_size": size}, blob)}
+      return extend
+
+    variants = [camera_variant([1344, 760]), camera_variant([1928, 1208])]
+    expected = load_model(path, cache=False)["run"](**self.tensors(7)).numpy()
+    for extend in variants:
+      load_model(path, extend=extend)
+    assert all(cache_is_fresh(path, extend=extend) for extend in variants)
+    with mock.patch.object(helpers, "PlainJit", side_effect=AssertionError("camera cache was evicted")):
+      for extend in variants:
+        actual = load_model(path, extend=extend)["run"](**self.tensors(7)).numpy()
+        np.testing.assert_array_equal(actual, expected)
+
   def test_fused_with_warp_matches_warp_then_model(self):
     from tinygrad import Tensor
     warp_path = os.path.join(self.tmp.name, "warp_tinygrad.pkl")

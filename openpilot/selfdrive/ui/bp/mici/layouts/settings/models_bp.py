@@ -2,7 +2,8 @@
 import time
 
 from openpilot.cereal import custom
-from openpilot.bluepilot.models.cache import pinned_favorites, offline_status, ready_bundle
+from openpilot.bluepilot.models.cache import pinned_favorites, offline_status
+from openpilot.bluepilot.models.warmup import switch_ready_bundle
 from openpilot.bluepilot.models.switch import STATUS, ERROR, TRANSACTION, RETRY, STATUS_TEXT, stage_bundle, switch_busy
 from openpilot.selfdrive.ui.mici.widgets.button import BigButton
 from openpilot.selfdrive.ui.mici.widgets.dialog import BigDialog
@@ -53,14 +54,14 @@ class ModelsLayoutMiciBP(ModelsLayoutMici):
     pinned = pinned_favorites(ui_state.params)
     for entry in pinned.values():
       bundle = entry['bundle']
-      if entry['source'] == source and ready_bundle(ui_state.params, bundle, source):
+      if entry['source'] == source and switch_ready_bundle(ui_state.params, bundle, source):
         btn = BigButton(bundle['displayName'].lower())
         btn.set_click_callback(lambda b=bundle: self._select_model(custom.ModelManagerSP.ModelBundle(**b)))
         buttons.append(btn)
     if buttons:
       self._push_selection_view(buttons)
     else:
-      gui_app.push_widget(BigDialog(tr('no cached Favorites'), tr('Mark models as Favorites and let them download offroad first.')))
+      gui_app.push_widget(BigDialog(tr('no cached Favorites'), tr('Mark models as Favorites and let them download and prepare offroad first.')))
 
   def _select_model(self, bundle):
     # Recheck at click time: the car may have engaged while the picker was open.

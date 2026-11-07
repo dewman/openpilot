@@ -160,17 +160,23 @@ def _cache_header_matches(file, path: str, device_map: dict | None, extra: str =
   return file.read(struct.unpack("<Q", file.read(8))[0]) == _cache_key(path, device_map, extra)
 
 
-def cache_is_fresh(path: str, device_map: dict | None = None) -> bool: # entry point for warmup proc
+# BluePilot: camera-fused models need separate caches for each runtime extension.
+def model_cache_path(path: str, extra: str = "") -> str:
+  return f"{path}.{extra}.cache" if extra else f"{path}.cache"
+
+
+def cache_is_fresh(path: str, device_map: dict | None = None, extend=None) -> bool: # entry point for warmup proc
   try:
-    with open(f"{path}.cache", "rb") as file:
-      return _cache_header_matches(file, path, device_map)
+    extra = _extended(path, extend)[2] if extend is not None else ""
+    with open(model_cache_path(path, extra), "rb") as file:
+      return _cache_header_matches(file, path, device_map, extra)
   except (OSError, struct.error):
     return False
 
 
 def _read_cache(path: str, parts: dict, device_map: dict | None, extra: str = "") -> dict | None:
   try:
-    with open(f"{path}.cache", "rb") as file:
+    with open(model_cache_path(path, extra), "rb") as file:
       if not _cache_header_matches(file, path, device_map, extra):
         return None
       shared: dict = {}
@@ -188,12 +194,13 @@ def _write_cache(path: str, jits: dict, device_map: dict | None, extra: str = ""
     def persistent_id(self, obj):
       return owners.get(id(obj)) if isinstance(obj, Buffer) else None
 
-  key, tmp_path = _cache_key(path, device_map, extra), f"{path}.cache.{os.getpid()}.tmp"
+  cache_path = model_cache_path(path, extra)
+  key, tmp_path = _cache_key(path, device_map, extra), f"{cache_path}.{os.getpid()}.tmp"
   with contextlib.suppress(Exception):
     with open(tmp_path, "wb") as file:
       file.write(struct.pack("<Q", len(key)) + key)
       _Pickler(file, protocol=5).dump({name: _Jit(jit.captured, jit.input_names, jit.buffers) for name, jit in jits.items()})
-    os.replace(tmp_path, f"{path}.cache")
+    os.replace(tmp_path, cache_path)
 
 
 # Everything below this comment block calls tinygrad internals, so after a tinygrad bump this

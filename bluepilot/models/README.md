@@ -31,10 +31,21 @@ and exposes **retry previous model**. The status uses the ordinary Models panel;
 it never opens a blocking switching screen. Deadlines still advance when IPC
 messages are stale. A manager restart recovers the persisted previous selection.
 
-Small-model Favorites also participate in offroad warmup. Workers have a
-30-second limit and are terminated when ignition changes or the parent exits.
+Every selectable Favorite must complete offroad preparation through the real
+modeld initializer and dummy inference. This includes native-format models and
+both supported camera sizes (1344x760 and 1928x1208). Camera-fused cache files
+are independent, so preparing one size cannot evict the other. Preparation does
+not change the active model or publish vehicle commands. Each GPU-owning worker
+has a 30-second limit and is terminated when ignition changes or the parent exits.
+
+A small readiness record pins the model files, prepared cache files, and runtime
+source identity. Missing or changed files, or a runtime/tinygrad update, remove
+onroad eligibility until preparation succeeds again. Failed preparation retries
+offroad after 60 seconds. Historical camera caches are pruned after successful
+preparation. The menu distinguishes downloaded Favorites from those ready to
+switch. Existing cache files contain graph metadata, not another copy of weights.
 Device GPU initialization and inference still need hardware verification; local
-tests simulate inference and process restarts.
+CPU tests validate cache separation/reuse and simulated process handovers.
 
 Validation:
 
@@ -50,3 +61,8 @@ The messaging regression forces native msgq in isolated subprocesses and fills
 all 25 carState reader slots. Native Params and IPC libraries must be built for
 these checks. GPU hangs, actual model startup latency, and repeated switches on
 the comma remain device checks before relying on this feature in the vehicle.
+
+The openpilot/ layout requires BP detection to use BASEDIR/BPVERSION. The
+layout regression imports the real MICI settings and road view with BP enabled;
+this catches stale vehicle, hardware, vision IPC, and renderer imports that
+otherwise remain hidden behind disabled BluePilot detection.

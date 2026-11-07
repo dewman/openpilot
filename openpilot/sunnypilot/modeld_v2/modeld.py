@@ -89,14 +89,15 @@ class ModelState(ModelStateBase):
   inputs: dict[str, np.ndarray]
   prev_desire: np.ndarray
 
-  def __init__(self, cam_w: int, cam_h: int, chestnut: bool = False):
+  def __init__(self, cam_w: int, cam_h: int, chestnut: bool = False, model_bundle=None):
     ModelStateBase.__init__(self)
 
     env_pkl = os.environ.get('COMBINED_MODEL_PKL')
-    if env_pkl and os.path.exists(env_pkl):
-      model_bundle = None
-    else:
-      model_bundle = get_active_bundle(chestnut=chestnut)
+    # BluePilot: offroad preparation supplies a bundle without changing selection.
+    if model_bundle is None:
+      if not (env_pkl and os.path.exists(env_pkl)):
+        model_bundle = get_active_bundle(chestnut=chestnut)
+    # End BluePilot
     self.generation = model_bundle.generation if model_bundle is not None else None
     overrides = {override.key: override.value for override in model_bundle.overrides} if model_bundle else {}
 

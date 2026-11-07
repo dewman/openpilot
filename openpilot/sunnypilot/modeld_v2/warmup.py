@@ -22,31 +22,26 @@ def main():
   The main entry point for offroad cache creation.
   Runs every 10 seconds and checks for a stale qcom model cache.
   """
+  # BluePilot: prepare Favorites with the actual runtime loader, including native models.
+  from openpilot.common.bluepilot import is_bluepilot
+  if is_bluepilot():
+    from openpilot.bluepilot.models.warmup import main as warmup_favorites
+    warmup_favorites()
+    return
+  # End BluePilot
   params, failed, native, spawn = Params(), set(), set(), multiprocessing.get_context("spawn")
   while True:
     bundle = get_selected_bundle(params, "qcom")
     path = os.path.join(Paths.model_root(), bundle.models[0].artifact.fileName) if bundle and bundle.models else ""
-    # BluePilot: prepare every cached small-model Favorite, with bounded workers
-    from openpilot.common.bluepilot import is_bluepilot
-    paths = [path]
-    if is_bluepilot():
-      from openpilot.bluepilot.models.warmup import favorite_paths, run_worker
-      paths.extend(favorite_paths(params))
-    for path in dict.fromkeys(paths):
-      if os.path.isfile(path) and not cache_is_fresh(path) and (attempt := (path, os.stat(path).st_mtime_ns)) not in failed | native:
-        if "input_specs" in read_parts(path)[1]:  # native models are fused
-          native.add(attempt)
-        else:
-          worker = spawn.Process(target=load_model, args=(path,), daemon=True)
-          if is_bluepilot():
-            run_worker(worker, params)
-          else:
-            worker.start()
-            worker.join()
-          if not cache_is_fresh(path):
-            cloudlog.error(f"model cache warmup failed for {path} with exit code {worker.exitcode}")
-            failed.add(attempt)
-    # End BluePilot
+    if os.path.isfile(path) and not cache_is_fresh(path) and (attempt := (path, os.stat(path).st_mtime_ns)) not in failed | native:
+      if "input_specs" in read_parts(path)[1]:  # native models are fused
+        native.add(attempt)
+      else:
+        (worker := spawn.Process(target=load_model, args=(path,), daemon=True)).start()
+        worker.join()
+        if not cache_is_fresh(path):
+          cloudlog.error(f"model cache warmup failed for {path} with exit code {worker.exitcode}")
+          failed.add(attempt)
     time.sleep(10)
 
 

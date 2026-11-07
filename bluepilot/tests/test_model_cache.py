@@ -232,3 +232,46 @@ def test_old_incompatible_pin_is_dropped(params):
   bundle['minimumSelectorVersion'] = REQUIRED_JSON_VERSION - 1
   params.put(FAVORITES, {'test': bundle}, block=True)
   assert pinned_favorites(params) == {}
+
+
+def test_downloaded_favorite_requires_successful_runtime_preparation_before_staging(params, tmp_path):
+  from openpilot.bluepilot.models.switch import PENDING
+  from openpilot.bluepilot.models.warmup import publish_ready, switch_ready_bundle
+  bundle = raw_bundle()
+  (tmp_path / 'model.pkl').write_bytes(BODY)
+  (tmp_path / 'model.pkl.camera.cache').write_bytes(b'compiled gpu graph')
+  params.put('ModelManager_Favs', 'test', block=True)
+  params.put(FAVORITES, {'test': {'source': 'qcom', 'bundle': bundle}}, block=True)
+  params.put(CACHE_STATUS, {'test': {'state': 'ready', 'signature': signature(bundle, tmp_path)}}, block=True)
+  with (patch('openpilot.common.hardware.hw.Paths.model_root', return_value=str(tmp_path)),
+        patch('openpilot.bluepilot.models.warmup.preparation_identity', return_value='engine'),
+        patch('openpilot.bluepilot.models.warmup.prepared_cache_paths', return_value=['model.pkl.camera.cache'])):
+    assert ready_bundle(params, bundle, 'qcom')
+    assert not switch_ready_bundle(params, bundle, 'qcom')
+    with pytest.raises(ValueError):
+      stage_bundle(params, bundle, 'qcom')
+    publish_ready(bundle, 'qcom', tmp_path, signature(bundle, tmp_path))
+    assert switch_ready_bundle(params, bundle, 'qcom')
+    stage_bundle(params, bundle, 'qcom')
+    assert params.get(PENDING)['bundle'] == bundle
+    params.remove(PENDING)
+    with patch('openpilot.bluepilot.models.warmup.preparation_identity', return_value='new-engine'):
+      assert not switch_ready_bundle(params, bundle, 'qcom')
+    (tmp_path / 'model.pkl.camera.cache').unlink()
+    assert not switch_ready_bundle(params, bundle, 'qcom')
+
+
+def test_prepare_camera_uses_requested_bundle_and_runs_real_model_warmup():
+  from openpilot.bluepilot.models.warmup import prepare_camera
+  bundle = raw_bundle()
+  # The loader module has GPU imports; substitute its public constructor so this
+  # regression cannot start inference or change the user's active model selection.
+  import sys
+  module = SimpleNamespace(ModelState=Mock())
+  with (patch.dict(sys.modules, {'openpilot.sunnypilot.modeld_v2.modeld': module}),
+        patch.dict('os.environ', {'COMBINED_MODEL_PKL': 'debug-model'})):
+    prepare_camera(bundle, 'qcom', 1344, 760)
+  args, kwargs = module.ModelState.call_args
+  assert args == (1344, 760) and kwargs['chestnut'] is False
+  assert kwargs['model_bundle'].ref == 'test'
+  module.ModelState.return_value.warmup.assert_called_once()

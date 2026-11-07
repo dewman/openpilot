@@ -45,11 +45,11 @@ def switch_busy(params):
 
 def stage_bundle(params, bundle, source):
   """Only accept verified, pinned local Favorites; no onroad downloads."""
-  from openpilot.bluepilot.models.cache import ready_bundle
+  from openpilot.bluepilot.models.warmup import switch_ready_bundle
   if source not in ACTIVE_KEYS or switch_busy(params):
     raise ValueError("A model operation is already pending or the hardware is invalid")
-  if not ready_bundle(params, bundle, source):
-    raise ValueError("Favorite is not ready offline; cache it offroad first")
+  if not switch_ready_bundle(params, bundle, source):
+    raise ValueError("Favorite needs offline download and GPU preparation first")
   params.remove(ERROR)
   params.put(STATUS, "waiting", block=True)
   params.put(PENDING, {"bundle": bundle, "source": source, "requested": time.monotonic()}, block=True)
@@ -70,8 +70,8 @@ class ModelSwitchCoordinatorBP:
   def __init__(self, params, processes, clock=time.monotonic, cache_ready=None):
     self.params, self.processes, self.clock = params, processes, clock
     if cache_ready is None:
-      from openpilot.bluepilot.models.cache import ready_bundle
-      cache_ready = ready_bundle
+      from openpilot.bluepilot.models.warmup import switch_ready_bundle
+      cache_ready = switch_ready_bundle
     self.cache_ready = cache_ready
     self.transaction = params.get(TRANSACTION)
     self.healthy_since = self.acknowledged_at = None
