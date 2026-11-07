@@ -31,7 +31,7 @@ class MiciCameraViewBP(MiciCameraView):
     return (
       (self._bp_hide_camera_view or self._bp_rad_racer_theme) and
       ui_state.is_onroad() and
-      self._stream_type != VisionStreamType.VISION_STREAM_DRIVER
+      self._stream_type != VisionStreamType.VISION_STREAM_CABIN
     )
 
   def _render(self, rect: rl.Rectangle):

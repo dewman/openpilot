@@ -8,9 +8,8 @@ card.py only needs a single function call instead of inline BP blocks.
 import time
 
 import openpilot.cereal.messaging as messaging
-from opendbc.car import structs
+from openpilot.cereal import custom
 from openpilot.common.params import Params
-from openpilot.selfdrive.car.helpers import convert_to_capnp
 
 _SETTINGS_INTERVAL = 5.0  # re-read params at most every 5 s
 _settings_last_read: float = 0.0
@@ -124,7 +123,7 @@ def publish_controller_state_bp(CI, pm):
   """Publish controllerStateBP if the car controller reports lateralUncertainty."""
   global _settings_last_read, _settings_cache
   if hasattr(CI.CC, "lateralUncertainty"):
-    cs_bp = structs.ControllerStateBP()
+    cs_bp = custom.ControllerStateBP.new_message()
     cs_bp.lateralUncertainty = CI.CC.lateralUncertainty
     cs_bp.angleRateLimited = getattr(CI.CC, "angleRateLimited", False)
     cs_bp.curvatureRateLimited = getattr(CI.CC, "curvatureRateLimited", False)
@@ -133,11 +132,11 @@ def publish_controller_state_bp(CI, pm):
     cs_bp.stallBlipActive = bool(getattr(CI.CC, "stallBlipActive", False))
     # BluePilot: mode the controller actually ran, straight off the car controller (not Params).
     if getattr(CI.CC, "disable_BP_lat_UI", True):
-      cs_bp.activeLateralMode = structs.ControllerStateBP.LateralMode.openpilot
+      cs_bp.activeLateralMode = custom.ControllerStateBP.LateralMode.openpilot
     elif getattr(CI.CC, "primary_lateral_control", 0) == 1:
-      cs_bp.activeLateralMode = structs.ControllerStateBP.LateralMode.angle
+      cs_bp.activeLateralMode = custom.ControllerStateBP.LateralMode.angle
     else:
-      cs_bp.activeLateralMode = structs.ControllerStateBP.LateralMode.curvature
+      cs_bp.activeLateralMode = custom.ControllerStateBP.LateralMode.curvature
 
     # BluePilot: settings snapshot -- refreshed at most every _SETTINGS_INTERVAL s so Params
     # reads don't add latency to every card.py tick.
@@ -159,10 +158,9 @@ def publish_controller_state_bp(CI, pm):
       cs_bp.bmsFingerprintForced = bool(getattr(CP, "fingerprintSource", None) == "fixed")
       cs_bp.bmsFingerprint = str(getattr(CP, "carFingerprint", "") or "")
 
-    cs_bp_capnp = convert_to_capnp(cs_bp)
     cs_bp_send = messaging.new_message('controllerStateBP')
     cs_bp_send.valid = True
-    cs_bp_send.controllerStateBP = cs_bp_capnp
+    cs_bp_send.controllerStateBP = cs_bp
     pm.send('controllerStateBP', cs_bp_send)
 
 

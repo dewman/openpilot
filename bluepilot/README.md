@@ -495,6 +495,32 @@ Set via Comma device UI (Routes panel) or params API:
 - [ ] Advanced search and filtering
 - [ ] Route comparison and diff tools
 
+## Offline onroad preflight
+
+Before deploying integration changes, run from the checkout root:
+
+```sh
+.venv/bin/python bluepilot/validate_onroad.py
+```
+
+This runs BP regressions, driving-process import checks, controller-state message
+serialization, camera visibility conditions for MICI/TICI, randomized Ford
+interface updates and control application, MADS, and model-switch checks.
+It uses CPU test settings and does not connect to a vehicle or transmit CAN.
+It does not validate camera/GPU rendering on device, physical steering, or vehicle dynamics.
+
+To audit the comma's existing settings without modifying them:
+
+```sh
+PYTHONPATH=/data/openpilot /usr/local/venv/bin/python bluepilot/validate_onroad.py --audit-settings
+```
+
+The audit checks registered stored values against their types and the literal
+ranges/option lists discoverable from settings widgets and the lateral manifest.
+It reports parameter names and reasons, never stored private values. Dynamically
+constructed option lists and all possible setting combinations are not covered.
+An audit finding requires investigation; it does not trigger a reset.
+
 ## Credits
 
 Built with:
