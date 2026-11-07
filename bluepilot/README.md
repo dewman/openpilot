@@ -509,6 +509,24 @@ interface updates and control application, MADS, and model-switch checks.
 It uses CPU test settings and does not connect to a vehicle or transmit CAN.
 It does not validate camera/GPU rendering on device, physical steering, or vehicle dynamics.
 
+For actual MICI rendering with recorded truck messages and engagement transitions:
+
+```sh
+.venv/bin/python bluepilot/replay_onroad_ui.py \
+  --log /path/to/rlog.zst --preferences /path/to/preferences.json \
+  --assets /path/to/hydrated/assets --output /tmp/bp-engaged-replay
+```
+
+This uses a real desktop graphics context, advances through recorded messages, and
+forces disengaged, MADS lateral-only, engaged, override, and disengaged states.
+It requires nonempty projected model geometry and counts calls to the engaged path
+renderer. Screenshots and a JSON coverage summary are saved under `--output`.
+`--leads` exercises lead-present rendering; `--set KEY=JSON` selects display variants.
+`--baseline-ref HEAD` runs the committed MICI renderer, allowing the reported crash
+to be reproduced before comparing against the working-tree fix. The runner uses
+isolated preferences and never publishes CAN. This is a UI replay, not a test of
+live steering or device camera/GPU drivers.
+
 To audit the comma's existing settings without modifying them:
 
 ```sh

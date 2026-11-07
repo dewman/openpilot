@@ -243,15 +243,27 @@ class RadRacerTheme:
     if radar_state is not None:
       leads = [radar_state.leadOne, radar_state.leadTwo]
       # Draw the farther lead first so the closer one overlaps it
-      order = sorted(range(2), key=lambda i: -(leads[i].dRel if leads[i] and leads[i].status else 0.0))
+      order = sorted(range(2), key=lambda i: -(leads[i].dRel if leads[i] and leads[i].present else 0.0))
       for i in order:
         lead = leads[i]
         lv = model_renderer._lead_vehicles[i] if i < len(model_renderer._lead_vehicles) else None
-        if not (lead and lead.status) or lv is None or not lv.chevron or lead.dRel > LEAD_MAX_DRAW_M:
+        if not (lead and lead.present) or lead.dRel > LEAD_MAX_DRAW_M:
           continue
-        cx = lv.chevron[1][0]
+        chevron = getattr(lv, 'chevron', None)
+        if chevron:
+          cx, lead_bottom = chevron[1][0], float(chevron[0][1])
+        else:
+          # MICI uses road bars rather than the full-size renderer's chevrons.
+          sample = self._path_point_at(model_renderer, lead.dRel)
+          if sample is None:
+            continue
+          distance, path_y, z = sample
+          point = model_renderer._map_to_screen(distance, path_y - lead.yRel, z)
+          if point is None:
+            continue
+          cx, lead_bottom = point
         # Anchor lead bottom to chevron base, but never below the ego car icon
-        base_y = min(float(lv.chevron[0][1]), max_lead_bottom)
+        base_y = min(lead_bottom, max_lead_bottom)
         px = float(np.interp(lead.dRel, [5.0, 40.0, 100.0], self.LEAD_SPRITE_PX))
         tex = self._lead_tex[i]
         w, h = tex.width * px, tex.height * px
@@ -310,7 +322,7 @@ class RadRacerTheme:
     lead_time_text = "---"
     lead_speed_text = "---"
     radar_state = sm['radarState'] if sm.valid['radarState'] else None
-    if radar_state is not None and radar_state.leadOne and radar_state.leadOne.status:
+    if radar_state is not None and radar_state.leadOne and radar_state.leadOne.present:
       lead = radar_state.leadOne
       if lead.dRel > 0 and v_ego > 0.5:
         t = lead.dRel / v_ego
