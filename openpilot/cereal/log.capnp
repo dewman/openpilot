@@ -133,6 +133,10 @@ struct OnroadEvent @0xc4fa6047f024e718 {
     bigModelLoading @100;
     bigModelFailed @102;
 
+    # BluePilot: persistent model-switch engagement interlock
+    bpModelSwitch @105;
+    bpModelSwitchReady @106;
+    # End BluePilot
     lowBatteryDEPRECATED @40;
     soundsUnavailableDEPRECATED @47;
     deviceFallingDEPRECATED @71;

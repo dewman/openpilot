@@ -391,11 +391,19 @@ class ModelManagerSP:
           self.params.remove("ModelManager_ClearCache")
 
         self._report_status()
+        # BluePilot: optional offroad Favorites preparation in the derived manager
+        self._idle_tasks()
+        # End BluePilot
         rk.keep_time()
 
       except Exception as e:
         cloudlog.exception(f"Error in main thread: {str(e)}")
         rk.keep_time()
+
+  # BluePilot: extension hook; stock manager has no background preparation
+  def _idle_tasks(self) -> None:
+    pass
+  # End BluePilot
 
   def clear_model_cache(self) -> None:
     """ Clears the model cache directory of all files except those in the active model bundle."""
@@ -418,7 +426,14 @@ class ModelManagerSP:
       cloudlog.exception(f"Error clearing model cache: {str(e)}")
 
 def main():
-  ModelManagerSP().main_thread()
+  # BluePilot: keep the stock process and use its extension for atomic Favorite caching
+  from openpilot.common.bluepilot import is_bluepilot
+  if is_bluepilot():
+    from openpilot.bluepilot.models.manager import ModelManagerBP
+    ModelManagerBP().main_thread()
+  else:
+    ModelManagerSP().main_thread()
+  # End BluePilot
 
 
 if __name__ == "__main__":

@@ -210,6 +210,16 @@ def invalid_lkas_setting_alert(CP: car.CarParams, CS: car.CarState, sm: messagin
 
 
 EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
+  # BluePilot: both stock and MADS state machines honor these events
+  EventName.bpModelSwitch: {
+    ET.NO_ENTRY: NoEntryAlert("Model switching - drive manually"),
+    ET.IMMEDIATE_DISABLE: ImmediateDisableAlert("Model switching - drive manually"),
+    ET.PERMANENT: NormalPermanentAlert("Model switching", "Drive manually - assistance unavailable"),
+  },
+  EventName.bpModelSwitchReady: {
+    ET.NO_ENTRY: NoEntryAlert("Press SET/RESUME or LKAS to engage"),
+  },
+  # End BluePilot
   # ********** events with no alerts **********
 
   EventName.noGps: {},

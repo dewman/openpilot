@@ -93,6 +93,11 @@ struct SelfdriveStateSP @0x81c2f05a394cf4af {
   intelligentCruiseButtonManagement @1 :IntelligentCruiseButtonManagement;
   buttonsPressed @2 :UInt16;
   buttonsReleaseToggle @3 :UInt16;
+  # BluePilot: acknowledgement and fresh factory-cruise state for model handover
+  bpModelSwitchToken @4 :Text;
+  bpModelSwitchCruiseDisengaged @5 :Bool;
+  bpModelSwitchCarStateMonoTime @6 :UInt64;
+  # End BluePilot
 
   enum AudibleAlert {
     none @0;

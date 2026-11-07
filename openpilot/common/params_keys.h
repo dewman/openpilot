@@ -214,6 +214,16 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"ModelManager_ActiveJson", {CLEAR_ON_MANAGER_START, JSON}},
     {"ModelManager_ClearCache", {CLEAR_ON_MANAGER_START, BOOL}},
     {"ModelManager_DownloadRef", {CLEAR_ON_MANAGER_START | CLEAR_ON_ONROAD_TRANSITION, STRING}},
+    // BluePilot: persistent cache and model handover recovery state
+    {"BPFavoriteModelBundles", {PERSISTENT, JSON}},
+    {"BPFavoriteModelStatus", {PERSISTENT, JSON}},
+    {"BPModelSwitchPending", {CLEAR_ON_MANAGER_START, JSON}},
+    {"BPModelSwitchTransaction", {PERSISTENT, JSON}},
+    {"BPModelSwitchStatus", {PERSISTENT, STRING}},
+    {"BPModelSwitchError", {PERSISTENT, STRING}},
+    {"BPModelSwitchRetry", {CLEAR_ON_MANAGER_START, BOOL}},
+    {"BPModelSwitchReengage", {PERSISTENT, BOOL}},
+    // End BluePilot
     {"ModelManager_Favs", {PERSISTENT | BACKUP, STRING}},
     {"ModelManager_LastSyncTime", {CLEAR_ON_MANAGER_START | CLEAR_ON_OFFROAD_TRANSITION, INT, "0"}},
     {"ModelManager_LastSyncTime_Chestnut", {CLEAR_ON_MANAGER_START | CLEAR_ON_OFFROAD_TRANSITION, INT, "0"}},

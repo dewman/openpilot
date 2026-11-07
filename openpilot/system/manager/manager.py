@@ -128,7 +128,12 @@ def manager_thread() -> None:
     ignore.append("pandad")
   ignore += [x for x in os.getenv("BLOCK", "").split(",") if len(x) > 0]
 
-  sm = messaging.SubMaster(['deviceState', 'carParams', 'pandaStates'], poll='deviceState')
+  # BluePilot: own handover in manager so only manager signals managed processes
+  from openpilot.common.bluepilot import is_bluepilot
+  from openpilot.bluepilot.models.switch import ModelSwitchCoordinatorBP, manager_submaster
+  bp_switch = ModelSwitchCoordinatorBP(params, managed_processes) if is_bluepilot() else None
+  sm = manager_submaster() if bp_switch else messaging.SubMaster(['deviceState', 'carParams', 'pandaStates'], poll='deviceState')
+  # End BluePilot
   pm = messaging.PubMaster(['managerState'])
 
   params.put_bool("IsOffroad", True, block=True)
@@ -158,6 +163,10 @@ def manager_thread() -> None:
     started_prev = started
     ignition_prev = ignition
 
+    # BluePilot: apply state transitions before choosing which model process runs
+    if bp_switch is not None:
+      bp_switch.update(sm)
+    # End BluePilot
     ensure_running(managed_processes.values(), started, params=params, CP=sm['carParams'], not_run=ignore)
 
     running = ' '.join("{}{}\u001b[0m".format("\u001b[32m" if p.proc.is_alive() else "\u001b[31m", p.name)

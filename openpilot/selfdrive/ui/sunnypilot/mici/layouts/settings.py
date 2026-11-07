@@ -17,6 +17,9 @@ from openpilot.system.ui.lib.multilang import tr
 # BluePilot: BluePilot settings panel button
 from openpilot.common.bluepilot import is_bluepilot
 if is_bluepilot():
+  # BluePilot: cached, disengaged onroad model selection
+  from openpilot.selfdrive.ui.bp.mici.layouts.settings.models_bp import ModelsLayoutMiciBP as ModelsLayoutMici
+  # End BluePilot
   from openpilot.selfdrive.ui.bp.mici.widgets.button_bp import BigButtonBP
   from openpilot.selfdrive.ui.bp.mici.layouts.settings.bluepilot import BluePilotLayoutMici
 

@@ -215,6 +215,16 @@ class ModularAssistiveDrivingSystem:
 
     self.update_events(CS)
 
+    # BluePilot: MADS may add automatic enable events or pause in a wrong gear.
+    # Keep it fully disabled until handover and manual re-engagement are complete.
+    bp_switch = getattr(self.selfdrive, 'bp_model_switch', None)
+    if bp_switch is not None and bp_switch.blocked is True:
+      self.state_machine.state = State.disabled
+      self.enabled = self.active = False
+      self.selfdrive.enabled_prev = self.selfdrive.enabled
+      return
+    # End BluePilot
+
     if not self.CP.passive and self.selfdrive.initialized:
       self.enabled, self.active = self.state_machine.update()
 

@@ -215,4 +215,13 @@ if os.path.exists("../../third_party/copyparty/copyparty-sfx.py"):
   copyparty_args += ["-q"]
   procs += [NativeProcess("copyparty-sfx", "openpilot/third_party/copyparty", ["./copyparty-sfx.py", *copyparty_args], and_(only_offroad, use_copyparty))]
 
+# BluePilot: inhibit only the model/planner graph while a bounded stop is in progress
+if is_bluepilot():
+  from openpilot.bluepilot.models.switch import PROCESSES, stop_for_switch
+  for _process in procs:
+    if _process.name in PROCESSES:
+      _should_run = _process.should_run
+      _process.should_run = lambda started, params, CP, predicate=_should_run: not stop_for_switch(params) and predicate(started, params, CP)
+# End BluePilot
+
 managed_processes = {p.name: p for p in procs}

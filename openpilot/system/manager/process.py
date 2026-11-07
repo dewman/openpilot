@@ -82,10 +82,20 @@ class ManagerProcess(ABC):
           sig = signal.SIGKILL if self.sigkill else signal.SIGINT
         self.signal(sig)
         self.shutting_down = True
+        # BluePilot: remember shutdown time for nonblocking escalation
+        self._stop_requested_at = time.monotonic()
+        # End BluePilot
 
         if not block:
           return None
 
+      # BluePilot: repeated nonblocking stop calls must remain nonblocking too.
+      # The manager polls shutdown across ticks and owns any escalation deadline.
+      if not block:
+        if retry and time.monotonic() - self._stop_requested_at >= 5:
+          self.signal(signal.SIGKILL)
+        return None
+      # End BluePilot
       join_process(self.proc, 5)
 
       # If process failed to die send SIGKILL

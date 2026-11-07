@@ -26,6 +26,10 @@ from openpilot.selfdrive.selfdrived.alertmanager import AlertManager, set_offroa
 from openpilot.common.version import get_build_metadata
 from openpilot.common.hardware import HARDWARE
 
+# BluePilot: model-switch interlock uses selfdrived's existing carState subscription
+from openpilot.common.bluepilot import is_bluepilot
+from openpilot.bluepilot.models.engagement import ModelSwitchEngagementBP
+# End BluePilot
 from openpilot.sunnypilot.mads.mads import ModularAssistiveDrivingSystem
 from openpilot.sunnypilot import get_sanitize_int_param
 from openpilot.sunnypilot.selfdrive.car.car_specific import CarSpecificEventsSP
@@ -181,6 +185,9 @@ class SelfdriveD:
     self.events_sp = EventsSP()
     self.events_sp_prev = []
 
+    # BluePilot: keep this initialized before any carState sample or publication
+    self.bp_model_switch = ModelSwitchEngagementBP(self.params) if is_bluepilot() else None
+    # End BluePilot
     self.mads = ModularAssistiveDrivingSystem(self)
     self.icbm = IntelligentCruiseButtonManagement(self.CP, self.CP_SP)
 
@@ -551,6 +558,10 @@ class SelfdriveD:
 
   def data_sample(self):
     _car_state = messaging.recv_one(self.car_state_sock)
+    # BluePilot: relay source validity and timestamp, not the fallback carState
+    if self.bp_model_switch is not None:
+      self.bp_model_switch.observe_car_state(_car_state)
+    # End BluePilot
     CS = _car_state.carState if _car_state else self.CS_prev
 
     self.sm.update(0)
@@ -646,6 +657,10 @@ class SelfdriveD:
     ss_sp_msg = messaging.new_message('selfdriveStateSP')
     ss_sp_msg.valid = True
     ss_sp = ss_sp_msg.selfdriveStateSP
+    # BluePilot: publish only after both engagement state machines saw the lock
+    if self.bp_model_switch is not None:
+      self.bp_model_switch.populate_state(ss_sp)
+    # End BluePilot
     mads = ss_sp.mads
     mads.state = self.mads.state_machine.state
     mads.enabled = self.mads.enabled
@@ -672,6 +687,10 @@ class SelfdriveD:
   def step(self):
     CS = self.data_sample()
     self.update_events(CS)
+    # BluePilot: insert the interlock before either engagement state machine
+    if self.bp_model_switch is not None:
+      self.bp_model_switch.update(CS, self.events)
+    # End BluePilot
     if not self.CP.passive and self.initialized:
       self.enabled, self.active = self.state_machine.update(self.events)
     if not self.CP.notCar:
