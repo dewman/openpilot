@@ -30,19 +30,19 @@ class BigButtonBP(BigButton):
 
     self._sub_label.set_font_size(value_size)
 
-  def _width_hint(self) -> int:
+  def _title_width_hint(self) -> int:
     # Shrink label area so wrapped text never overlaps the icon drawn at top-right
     if self._txt_icon:
       return int(self._rect.width - self.LABEL_HORIZONTAL_PADDING * 2 - self._txt_icon.width - 20)
-    return super()._width_hint()
+    return super()._title_width_hint()
 
   def _draw_content(self, btn_y: float):
     # BluePilot: measure both labels and shrink label font so they don't overlap
-    w = self._width_hint()
+    w = self._title_width_hint()
     avail = self._rect.height - self.LABEL_VERTICAL_PADDING * 2
 
     if self.value:
-      sub_h = self._sub_label.get_content_height(w)
+      sub_h = self._sub_label.get_content_height(self._subtitle_width_hint())
       max_label_h = avail - sub_h
       if max_label_h > 0:
         self._label.set_font_size(self._get_label_font_size())
