@@ -522,6 +522,8 @@ forces disengaged, MADS lateral-only, engaged, override, and disengaged states.
 It requires nonempty projected model geometry and counts calls to the engaged path
 renderer. Screenshots and a JSON coverage summary are saved under `--output`.
 `--leads` exercises lead-present rendering; `--set KEY=JSON` selects display variants.
+`--models-menu` renders the Models menu through the same engagement transitions
+and checks selection eligibility and live-learning/fixed-delay control availability.
 `--baseline-ref HEAD` runs the committed MICI renderer, allowing the reported crash
 to be reproduced before comparing against the working-tree fix. The runner uses
 isolated preferences and never publishes CAN. This is a UI replay, not a test of

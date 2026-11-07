@@ -1,4 +1,7 @@
 from opendbc.car import CanBusBase
+# BluePilot: cluster-display support is restricted to CAN-FD vehicles.
+from opendbc.car.ford.values import FordFlags
+# End BluePilot
 
 
 class CanBus(CanBusBase):
@@ -126,7 +129,7 @@ def create_acc_msg(packer, CAN: CanBus, long_active: bool, gas: float, accel: fl
 
 
 def create_acc_ui_msg(packer, CAN: CanBus, CP, main_on: bool, enabled: bool, fcw_alert: bool, standstill: bool,
-                      show_distance_bars: bool, hud_control, stock_values: dict):
+                      show_distance_bars: bool, hud_control, stock_values: dict, bluecruise_ui: bool = False):  # BluePilot
   """
   Creates a CAN message for the Ford IPC adaptive cruise, forward collision warning and traffic jam
   assist status.
@@ -142,6 +145,8 @@ def create_acc_ui_msg(packer, CAN: CanBus, CP, main_on: bool, enabled: bool, fcw
       status = 3  # ActiveInterventionLeft
     elif hud_control.rightLaneDepart:
       status = 4  # ActiveInterventionRight
+    elif bluecruise_ui and CP.flags & FordFlags.CANFD:  # BluePilot: existing BP cluster display convention
+      status = 7
     else:
       status = 2  # Active
   elif main_on:

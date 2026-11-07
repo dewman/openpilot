@@ -173,7 +173,10 @@ class CarController(CarControllerBase):
       show_distance_bars = self.frame - self.distance_bar_frame < 400
       can_sends.append(fordcan.create_acc_ui_msg(self.packer, self.CAN, self.CP, main_on, CC.latActive,
                                                  fcw_alert, CS.out.cruiseState.standstill, show_distance_bars,
-                                                 hud_control, CS.acc_tja_status_stock_values))
+                                                 hud_control, CS.acc_tja_status_stock_values,
+                                                 # BluePilot: display preference only; steering/DM stay unchanged.
+                                                 bluecruise_ui=any(p.key == 'send_hands_free_cluster_msg' and p.value == b'1'
+                                                                  for p in CC_SP.params)))
 
     self.main_on_last = main_on
     self.lkas_enabled_last = CC.latActive

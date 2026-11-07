@@ -114,7 +114,7 @@ class ControlsExt(ModelStateBase):
     return CC_SP
 
   def read_lateral_params(self) -> list[dict]:
-    """BluePilot: UI-tunable lateral params for the opendbc lateral, as CarControlSP.params entries.
+    """BluePilot: lateral tuning and Ford HUD preference as CarControlSP.params entries.
     A key never written on the device publishes its params_keys.h default, so the lateral runs
     the value the settings UI shows (#6 in ford-op/bg-opendbc). Read every frame, as carcontroller did
     before, so a UI change (disable_BP_lat_UI in particular) still lands on the next frame.
@@ -124,7 +124,8 @@ class ControlsExt(ModelStateBase):
     # Ford needs it, so a submodule on another layout must not break controlsd for other brands
     from opendbc.bluepilot_lateral.core.values_ext import BP_LATERAL_PARAMS
     entries = []
-    for key in BP_LATERAL_PARAMS:
+    # BluePilot: the Ford HUD preference shares the existing per-frame parameter channel.
+    for key in (*BP_LATERAL_PARAMS, 'send_hands_free_cluster_msg'):
       try:
         value = self.params.get(key, return_default=True)
       except UnknownKeyName:

@@ -23,11 +23,35 @@ def test_menu_requires_fresh_disengaged_state(onroad, engaged, cruise, stale, ex
   }
   class Messages(dict):
     logMonoTime = dict.fromkeys(sm, int((now - (2 if stale else 0)) * 1e9))
-    def all_checks(self, names):
+    def all_alive(self, names):
+      return True
+    def all_valid(self, names):
       return True
   state = SimpleNamespace(is_offroad=lambda: not onroad, sm=Messages(sm))
   with patch.object(menu, 'ui_state', state):
     assert menu.selection_allowed() is expected
+
+
+def test_real_slow_ui_subscriber_does_not_block_fresh_disengaged_selection():
+  from openpilot.cereal import messaging
+  from openpilot.common.prefix import OpenpilotPrefix
+  names = ['selfdriveState', 'selfdriveStateSP', 'carState']
+  with OpenpilotPrefix():
+    sm = messaging.SubMaster(names)
+    now = time.monotonic()
+    # The UI reads conflated snapshots at 30 Hz from nominally 100 Hz services.
+    for i in range(300):
+      stamp = now - 10 + i / 30
+      messages = [messaging.new_message(name, valid=True, logMonoTime=int(stamp * 1e9)).as_reader() for name in names]
+      sm.update_msgs(stamp, messages)
+    assert not sm.all_checks(names)  # Reproduces the previous greyed-out control.
+    assert sm.all_alive(names) and sm.all_valid(names)
+    with patch.object(menu, 'ui_state', SimpleNamespace(is_offroad=lambda: False, sm=sm)):
+      assert menu.selection_allowed()
+      sm.data['selfdriveStateSP'] = messaging.new_message('selfdriveStateSP').selfdriveStateSP
+      sm.data['selfdriveStateSP'].mads.enabled = True
+      assert not menu.selection_allowed()
+      assert 'MADS' in menu.selection_block_reason()
 
 
 def test_picker_click_rechecks_engagement_before_staging():

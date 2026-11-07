@@ -132,8 +132,12 @@ def run(args):
     rl.set_config_flags(rl.ConfigFlags.FLAG_WINDOW_HIDDEN)
     gui_app = application.gui_app
     gui_app.init_window('BluePilot engaged-state replay')
-    view = MiciAugmentedRoadViewBP()
-    gui_app.push_widget(view)
+    view = None if args.models_menu else MiciAugmentedRoadViewBP()
+    panel = None
+    if args.models_menu:
+      from openpilot.selfdrive.ui.bp.mici.layouts.settings.models_bp import ModelsLayoutMiciBP
+      panel = ModelsLayoutMiciBP()
+    gui_app.push_widget(panel if panel is not None else view)
     rl.get_frame_time = lambda: 1 / 60
     rl.get_time = lambda: frame / 60
     screenshots = Path(args.output)
@@ -146,8 +150,19 @@ def run(args):
           ui_state.update_params()
         # No video decoder/vehicle camera is needed to project recorded model geometry.
         # Use the real camera calibration/projection before the next onroad render.
-        view._update_calibration()
-        view._calc_frame_matrix(view._content_rect)
+        if view is not None:
+          view._update_calibration()
+          view._calc_frame_matrix(view._content_rect)
+        if panel is not None and frame % args.frames_per_state > 5:
+          expected = mode == 'disengaged'
+          if panel.select_model_btn.enabled != expected:
+            raise RuntimeError(f'Model selector enable state incorrect in {mode}')
+          if panel.delay_control.enabled == params.get_bool('LagdToggle'):
+            raise RuntimeError('Fixed delay availability does not match learning setting')
+          if frame % args.frames_per_state == 10:
+            targets = [panel.select_model_btn, panel.lagd_toggle, panel.delay_control, panel.select_model_btn, panel.lagd_toggle]
+            target = targets[min(frame // args.frames_per_state, len(targets) - 1)]
+            panel._scroller.scroll_to(target.rect.x - panel.rect.x, smooth=False)
         if ui_state.status != UIStatus.DISENGAGED:
           counters[mode] += 1
         if frame % args.frames_per_state == args.frames_per_state - 1:
@@ -160,16 +175,17 @@ def run(args):
         frame += 1
         if frame >= args.frames_per_state * len(modes):
           break
-      if path_calls < args.frames_per_state:
+      if panel is None and path_calls < args.frames_per_state:
         raise RuntimeError(f'Engaged path was not exercised: {path_calls} calls')
       if not all(counters[k] for k in ('lateral_only', 'engaged', 'override')):
         raise RuntimeError(f'Missing engagement coverage: {counters}')
       report = {'frames': frame, 'path_draw_calls': path_calls, 'engaged_frames': counters,
-                'model_points': len(view._model_renderer._path.projected_points),
+                'model_points': len(view._model_renderer._path.projected_points) if view is not None else None,
                 'source_events_replayed': source_events,
                 'source_seconds_replayed': min(frame / 60, (source_end - source_start) / 1e9),
+                'models_menu': args.models_menu,
                 'recording': str(Path(args.log).resolve()), 'baseline_ref': args.baseline_ref}
-      if not report['model_points']:
+      if panel is None and not report['model_points']:
         raise RuntimeError('No recorded model geometry was projected')
       (screenshots / 'report.json').write_text(json.dumps(report, indent=2))
       print(json.dumps(report))
@@ -185,6 +201,7 @@ def main():
   parser.add_argument('--baseline-ref')
   parser.add_argument('--set', action='append', default=[], metavar='KEY=JSON')
   parser.add_argument('--leads', action='store_true', help='Exercise radar lead-present branches')
+  parser.add_argument('--models-menu', action='store_true', help='Render and check the real model menu through engagement transitions')
   parser.add_argument('--frames-per-state', type=int, default=120)
   parser.add_argument('--output', required=True)
   args = parser.parse_args()

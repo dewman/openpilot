@@ -22,3 +22,5 @@ def test_ui_and_lateral_constraints_are_discovered():
   assert constraints['FordPrefLateralControl']['min'] == 0
   assert constraints['FordPrefLateralControl']['max'] == 1
   assert constraints['FordHighSpeedDampening_ang']['min'] == 0.25
+  assert constraints['LagdToggleDelay']['min'] == 0.05
+  assert constraints['LagdToggleDelay']['max'] == 0.5
