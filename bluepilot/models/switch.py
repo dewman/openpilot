@@ -21,7 +21,7 @@ CONTROL_SERVICES = ("selfdriveState", "selfdriveStateSP", "carControl")
 OUTPUT_SERVICES = ("modelV2", "longitudinalPlan", "controlsState")
 SERVICES = (*CONTROL_SERVICES, *OUTPUT_SERVICES)
 STATUS_TEXT = {
-  "waiting": "Disengage steering and cruise control to switch models.",
+  "waiting": "Model switch requested. Waiting for current vehicle state.",
   "locking": "Preparing model switch. Drive manually.",
   "stopping": "Stopping the previous model. Drive manually.",
   "loading": "Loading model. Drive manually.",
@@ -211,7 +211,7 @@ class ModelSwitchCoordinatorBP:
       pending = self.params.get(PENDING)
       if pending is None:
         return
-      # Requests expire rather than unexpectedly applying after later disengagement.
+      # Requests expire rather than unexpectedly applying after delayed IPC.
       if now - pending['requested'] > self.LOCK_TIMEOUT or not device_fresh:
         self.params.remove(PENDING)
         self._status('cancelled')
@@ -221,7 +221,11 @@ class ModelSwitchCoordinatorBP:
         self.params.put(ERROR, 'Favorite is no longer cached.', block=True)
         self._status('cancelled')
         return
-      if started and (not self._fresh(sm, CONTROL_SERVICES) or not self._inactive(sm)):
+      # Selection may happen while engaged. Persist the interlock first so
+      # selfdrived disables stock/MADS and controlsd requests factory-cruise
+      # cancellation. The locking phase still requires fresh inactive controls
+      # and factory-cruise feedback before any model process is stopped.
+      if started and not self._fresh(sm, CONTROL_SERVICES):
         self._status('waiting')
         return
       source = pending['source']

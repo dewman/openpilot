@@ -9,6 +9,7 @@ from openpilot.selfdrive.ui.mici.widgets.button import BigButton
 from openpilot.selfdrive.ui.mici.widgets.dialog import BigDialog
 from openpilot.selfdrive.ui.bp.mici.widgets.button_bp import BigParamControlBP
 from openpilot.selfdrive.ui.bp.mici.widgets.floatbutton import BigParamFloatControl
+from openpilot.selfdrive.ui.bp.mici.widgets.disengage_countdown import warn_before_disengage
 from openpilot.selfdrive.ui.sunnypilot.mici.layouts.models import ModelsLayoutMici
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.system.ui.lib.application import gui_app
@@ -26,10 +27,6 @@ def selection_block_reason():
   if not (sm.all_alive(names) and sm.all_valid(names) and
           all(0 <= now - sm.logMonoTime[s] / 1e9 < 1 for s in names)):
     return tr('waiting for current vehicle state')
-  if sm['carState'].cruiseState.enabled or sm['selfdriveState'].enabled:
-    return tr('disengage cruise to switch')
-  if sm['selfdriveStateSP'].mads.enabled:
-    return tr('turn MADS steering off with the lane-centering button')
   return None
 
 
@@ -81,6 +78,7 @@ class ModelsLayoutMiciBP(ModelsLayoutMici):
       bundle = entry['bundle']
       if entry['source'] == source and switch_ready_bundle(ui_state.params, bundle, source):
         btn = BigButton(bundle['displayName'].lower())
+        btn.set_value(tr('select to disengage and switch'))
         btn.set_click_callback(lambda b=bundle: self._select_model(custom.ModelManagerSP.ModelBundle(**b)))
         buttons.append(btn)
     if buttons:
@@ -89,14 +87,24 @@ class ModelsLayoutMiciBP(ModelsLayoutMici):
       gui_app.push_widget(BigDialog(tr('no cached Favorites'), tr('Mark models as Favorites and let them download and prepare offroad first.')))
 
   def _select_model(self, bundle):
-    # Recheck at click time: the car may have engaged while the picker was open.
     if not selection_allowed() or switch_busy(ui_state.params):
       return
     if ui_state.is_offroad():
       super()._select_model(bundle)
       return
+    source = self._selection_source
+    warn_before_disengage(lambda: self._apply_model(bundle, source))
+
+  def _apply_model(self, bundle, source):
+    # Recheck freshness at click time. The manager owns disengagement and must
+    # observe the acknowledged inactive controls before stopping the model.
+    if not selection_allowed() or switch_busy(ui_state.params):
+      return
+    # A countdown must not turn into an offroad download after ignition-off.
+    if ui_state.is_offroad():
+      return
     try:
-      stage_bundle(ui_state.params, bundle.to_dict(), self._selection_source)
+      stage_bundle(ui_state.params, bundle.to_dict(), source)
     except ValueError as exc:
       gui_app.push_widget(BigDialog(tr('model unavailable'), str(exc)))
       return

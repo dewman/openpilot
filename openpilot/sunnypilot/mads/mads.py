@@ -218,7 +218,15 @@ class ModularAssistiveDrivingSystem:
     # BluePilot: MADS may add automatic enable events or pause in a wrong gear.
     # Keep it fully disabled until handover and manual re-engagement are complete.
     bp_switch = getattr(self.selfdrive, 'bp_model_switch', None)
-    if bp_switch is not None and bp_switch.blocked is True:
+    bp_assistance = getattr(self.selfdrive, 'bp_assistance_switch', None)
+    if ((bp_switch is not None and bp_switch.blocked is True) or
+        (bp_assistance is not None and bp_assistance.blocked is True)):
+      if bp_assistance is not None and bp_assistance.blocked is True:
+        # update_events removes buttonCancel; restore it for the disengage alert.
+        from openpilot.selfdrive.selfdrived.events import ET
+        self.events.add(EventName.buttonCancel)
+        if self.enabled:
+          self.selfdrive.state_machine.current_alert_types.append(ET.USER_DISABLE)
       self.state_machine.state = State.disabled
       self.enabled = self.active = False
       self.selfdrive.enabled_prev = self.selfdrive.enabled

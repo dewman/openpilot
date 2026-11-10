@@ -154,7 +154,7 @@ def run(args):
           view._update_calibration()
           view._calc_frame_matrix(view._content_rect)
         if panel is not None and frame % args.frames_per_state > 5:
-          expected = mode == 'disengaged'
+          expected = True  # browsing/selection remains available while engaged
           if panel.select_model_btn.enabled != expected:
             raise RuntimeError(f'Model selector enable state incorrect in {mode}')
           if panel.delay_control.enabled == params.get_bool('LagdToggle'):

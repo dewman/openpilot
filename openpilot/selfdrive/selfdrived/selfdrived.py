@@ -187,6 +187,8 @@ class SelfdriveD:
 
     # BluePilot: keep this initialized before any carState sample or publication
     self.bp_model_switch = ModelSwitchEngagementBP(self.params) if is_bluepilot() else None
+    from openpilot.bluepilot.selfdrive.assistance_switch import AssistanceSwitchBP
+    self.bp_assistance_switch = AssistanceSwitchBP(self.params, self.CP.passive) if is_bluepilot() else None
     # End BluePilot
     self.mads = ModularAssistiveDrivingSystem(self)
     self.icbm = IntelligentCruiseButtonManagement(self.CP, self.CP_SP)
@@ -689,6 +691,7 @@ class SelfdriveD:
     self.update_events(CS)
     # BluePilot: insert the interlock before either engagement state machine
     if self.bp_model_switch is not None:
+      self.bp_assistance_switch.update(self.events, self.sm, self.bp_model_switch)
       self.bp_model_switch.update(CS, self.events)
     # End BluePilot
     if not self.CP.passive and self.initialized:

@@ -7,6 +7,12 @@ from openpilot.selfdrive.ui.layouts.settings.common import restart_needed_callba
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.selfdrive.ui.mici.layouts.settings.initial_cruise_speed import InitialCruiseSpeedButton
 
+# BluePilot: disable assistance before requesting its configuration reload.
+from openpilot.common.bluepilot import is_bluepilot
+from openpilot.bluepilot.selfdrive.assistance_switch import toggle_assistance
+from openpilot.selfdrive.ui.bp.mici.widgets.disengage_countdown import AssistanceToggleBP
+# End BluePilot
+
 PERSONALITY_TO_INT = log.LongitudinalPersonality.schema.enumerants
 
 
@@ -33,7 +39,11 @@ class TogglesLayoutMici(NavScroller):
                                  toggle_callback=restart_needed_callback,
                                  description="Record microphone audio while driving.\n" +
                                              "Audio is included in dashcam videos in sunnylink.")
-    enable_openpilot = BigParamControl("enable sunnypilot", "OpenpilotEnabledToggle", toggle_callback=restart_needed_callback,
+    # BluePilot: selfdrived owns onroad disengagement before the software cycle.
+    assistance_callback = (lambda enabled: toggle_assistance(enabled, ui_state)) if is_bluepilot() else restart_needed_callback
+    assistance_control = AssistanceToggleBP if is_bluepilot() else BigParamControl
+    # End BluePilot
+    enable_openpilot = assistance_control("enable sunnypilot", "OpenpilotEnabledToggle", toggle_callback=assistance_callback,
                                        description="Enable to use sunnypilot driver assistance.\n" +
                                                    "Disable to use your car's stock driver assistance.")
 
@@ -59,7 +69,9 @@ class TogglesLayoutMici(NavScroller):
       ("OpenpilotEnabledToggle", enable_openpilot),
     )
 
-    enable_openpilot.set_enabled(lambda: not ui_state.engaged)
+    # BluePilot: allow requesting disengagement directly from the toggle.
+    enable_openpilot.set_enabled(lambda: is_bluepilot() or not ui_state.engaged)
+    # End BluePilot
     record_front.set_enabled(False if ui_state.params.get_bool("RecordFrontLock") else (lambda: not ui_state.engaged))
     record_mic.set_enabled(lambda: not ui_state.engaged)
 

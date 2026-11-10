@@ -101,8 +101,6 @@ def run_scenario(scenario):
       if frame in (50, 350, 400, 850):
         events.add(log.OnroadEvent.EventName.buttonEnable)
         events_sp.add(custom.OnroadEventSP.EventName.lkasEnable)
-      if frame == 150:
-        events.add(log.OnroadEvent.EventName.buttonCancel)
       guard.update(received.carState, events)
       selfdrive.enabled, active = machine.update(events)
       mads_enabled, mads_active = mads.update()
@@ -148,7 +146,8 @@ def run_scenario(scenario):
   assert set(counts.values()) == {1000}, counts
   assert phases == {'locking', 'stopping', 'loading'}, phases
   assert enabled_at[50] == (True, True)  # ordinary engagement works before selection
-  assert enabled_at[150] == (False, False)
+  assert enabled_at[250] == (True, True)  # selection occurs while both are engaged
+  assert enabled_at[251] == (False, False)  # interlock automatically disengages
   assert enabled_at[350] == enabled_at[400] == (False, False)  # lock blocks both
   assert enabled_at[800] == (False, False)  # never automatically resume
   assert enabled_at[850] == (True, True)  # fresh manual engagement after ready

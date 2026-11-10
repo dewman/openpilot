@@ -1,9 +1,18 @@
 # Cached model handover
 
-The comma 4 Models menu allows selection while moving after both steering
-(including paused MADS) and cruise control are disengaged. Onroad selections
-are limited to compatible Favorites cached for the connected hardware. Small
-and Chestnut models retain their separate selection slots.
+The comma 4 Models menu allows browsing and selection while engaged. Tapping
+a compatible cached Favorite requests automatic disengagement of steering
+(including paused MADS) and cruise control before the actual model change.
+Browsing alone leaves assistance running. The picker labels this action
+"select to disengage and switch". Small and Chestnut models retain their
+separate selection slots.
+
+Onroad model selection and turning off **Enable sunnypilot** first show
+**comma about to disengage** with a visible **3...2...1** countdown. Swipe down
+to cancel. The model request or assistance setting is not applied until the
+warning finishes; browsing and the countdown themselves do not request
+disengagement. Offroad actions and turning assistance back on do not count down.
+The existing manual re-engagement requirement remains in effect.
 
 The offroad `models_manager` process uses `ModelManagerBP`, extending the
 SunnyPilot manager. It downloads all `ModelManager_Favs`, pins their manifests,
@@ -16,7 +25,10 @@ the onroad UI or manager handover path.
 
 The manager owns a persistent transaction and restarts only modeld and plannerd.
 Before stopping either, it requires selfdrived to acknowledge the transaction
-and publish fresh inactive steering/cruise/control state. Selfdrived uses its
+and publish fresh inactive steering/cruise/control state. The interlock disables
+stock and MADS engagement; controlsd's existing cancel path requests factory
+cruise cancellation. If cruise does not acknowledge cancellation, the switch
+times out without stopping the current model. Selfdrived uses its
 existing carState subscription to relay factory-cruise status. Both stock and
 MADS engagement are inhibited until completion, followed by a fresh manual
 engagement-button press.

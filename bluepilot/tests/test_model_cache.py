@@ -158,7 +158,8 @@ def test_stock_engagement_lock_uses_real_state_machine(params, state_name):
 
 
 @pytest.mark.parametrize('state_name', ['disabled', 'paused', 'enabled', 'softDisabling', 'overriding'])
-def test_mads_interlock_overrides_automatic_enable_and_pause(params, state_name):
+@pytest.mark.parametrize('assistance', [False, True])
+def test_mads_interlock_overrides_automatic_enable_and_pause(params, state_name, assistance):
   switch = ModelSwitchEngagementBP(params)
   params.put(TRANSACTION, {'id': 'lock'}, block=True)
   events = Events()
@@ -169,11 +170,18 @@ def test_mads_interlock_overrides_automatic_enable_and_pause(params, state_name)
   instance.data_sample = Mock()
   instance.update_events = Mock()
   instance.state_machine = SimpleNamespace(state=getattr(custom.ModularAssistiveDrivingSystem.ModularAssistiveDrivingSystemState, state_name))
-  instance.selfdrive = SimpleNamespace(bp_model_switch=switch, enabled=False)
+  instance.selfdrive = SimpleNamespace(bp_model_switch=None if assistance else switch,
+                                      bp_assistance_switch=SimpleNamespace(blocked=assistance), enabled=False,
+                                      state_machine=SimpleNamespace(current_alert_types=[]))
+  instance.events = events
   instance.enabled = instance.active = True
   instance.update(car.CarState())
   assert not instance.enabled and not instance.active
   assert instance.state_machine.state == custom.ModularAssistiveDrivingSystem.ModularAssistiveDrivingSystemState.disabled
+  if assistance:
+    from openpilot.selfdrive.selfdrived.events import ET
+    assert events.contains(ET.USER_DISABLE)
+    assert ET.USER_DISABLE in instance.selfdrive.state_machine.current_alert_types
 
 
 def test_params_lock_survives_restart_and_transition_clears(params):

@@ -157,8 +157,8 @@ def test_switch_and_manual_reengagement(source):
     assert not h.processes[name].stops
 
 
-@pytest.mark.parametrize('kind', ['stock', 'mads', 'lat', 'long', 'cruise', 'stale', 'invalid'])
-def test_request_cannot_stop_an_engaged_or_stale_graph(kind):
+@pytest.mark.parametrize('kind', ['stock', 'mads', 'lat', 'long', 'cruise'])
+def test_engaged_request_locks_but_cannot_stop_until_inactive(kind):
   h = Harness()
   if kind == 'stock':
     h.sm['selfdriveState'].enabled = True
@@ -170,6 +170,24 @@ def test_request_cannot_stop_an_engaged_or_stale_graph(kind):
     h.sm['carControl'].longActive = True
   if kind == 'cruise':
     h.sm.cs.cruiseState.enabled = True
+  h.request()
+  h.tick()
+  assert h.params.get(TRANSACTION)['phase'] == 'locking'
+  # A token alone is insufficient while any control or factory cruise is active.
+  h.tick()
+  h.tick()
+  assert all(not p.stops for p in h.processes.values())
+  assert h.params.get(ACTIVE_KEYS['qcom']) == h.previous
+  h.tick(dt=6)
+  assert h.params.get(TRANSACTION) is None
+  assert h.params.get(PENDING) is None
+  assert h.params.get(STATUS) == 'cancelled'
+  assert all(not p.stops for p in h.processes.values())
+
+
+@pytest.mark.parametrize('kind', ['stale', 'invalid'])
+def test_request_cannot_lock_or_stop_a_stale_graph(kind):
+  h = Harness()
   if kind == 'invalid':
     h.sm.bad.add('carControl')
   h.request()
