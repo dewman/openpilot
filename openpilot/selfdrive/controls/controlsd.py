@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 import math
+# BluePilot: timestamp-bounded acknowledgement of stock Ford ACC engagement.
+import time
+# End BluePilot
 from numbers import Number
 
 from openpilot.cereal import log
@@ -40,6 +43,13 @@ class Controls(ControlsExt):
 
     # Initialize sunnypilot controlsd extension and base model state
     ControlsExt.__init__(self, self.CP, self.params)
+
+    # BluePilot: stock Ford ACC can engage before selfdrived acknowledges its carState.
+    from openpilot.common.bluepilot import is_bluepilot
+    from openpilot.bluepilot.selfdrive.ford_cruise import FordCruiseCancelBP
+    self.bp_cruise_cancel = (FordCruiseCancelBP() if is_bluepilot() and self.CP.brand == 'ford' and
+                             self.CP.pcmCruise and not self.CP.openpilotLongitudinalControl else None)
+    # End BluePilot
 
     self.CI = interfaces[self.CP.carFingerprint](self.CP, self.CP_SP)
 
@@ -179,6 +189,12 @@ class Controls(ControlsExt):
 
     CC.cruiseControl.override = CC.enabled and not CC.longActive and (self.CP.openpilotLongitudinalControl or not self.CP_SP.pcmCruiseSpeed)
     CC.cruiseControl.cancel = CS.cruiseState.enabled and (not CC.enabled or not self.CP.pcmCruise)
+    # BluePilot: do not cancel SET using selfdrived's older, pre-engagement snapshot.
+    if self.bp_cruise_cancel is not None:
+      CC.cruiseControl.cancel = self.bp_cruise_cancel.update(
+        CC.cruiseControl.cancel, CS, self.sm.logMonoTime['carState'], self.sm.logMonoTime['selfdriveState'],
+        time.monotonic_ns(), self.sm.valid['carState'] and self.sm.valid['selfdriveState'] and CS.canValid and not CS.canTimeout)
+    # End BluePilot
     CC.cruiseControl.resume = CC.enabled and CS.cruiseState.standstill and not self.sm['longitudinalPlan'].shouldStop
 
     hudControl = CC.hudControl

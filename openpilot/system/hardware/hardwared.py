@@ -199,7 +199,7 @@ def hw_state_thread(end_event, hw_queue):
     time.sleep(DT_HW)
 
 
-def hardware_thread(end_event, hw_queue) -> None:
+def hardware_thread(end_event, hw_queue, bp_heartbeat=None) -> None:  # BluePilot: optional diagnostic observer
   system_stats = LinuxSystemStats() if sys.platform == "linux" else None
   pm = messaging.PubMaster(['deviceState'])
   sm = messaging.SubMaster(["peripheralState", "gpsLocationExternal", "selfdriveState", "pandaStates", "chestnutState"], poll="pandaStates")
@@ -472,6 +472,10 @@ def hardware_thread(end_event, hw_queue) -> None:
 
     msg.deviceState.thermalStatus = thermal_status
     pm.send("deviceState", msg)
+    # BluePilot: mark actual publication, after all synchronous hardware/parameter I/O.
+    if bp_heartbeat is not None:
+      bp_heartbeat.published()
+    # End BluePilot
 
     statlog.gauge("free_space_percent", msg.deviceState.freeSpacePercent)
     statlog.gauge("gpu_usage_percent", msg.deviceState.gpuUsagePercent)
@@ -531,9 +535,15 @@ def main():
   hw_queue = queue.Queue(maxsize=1)
   end_event = threading.Event()
 
+  # BluePilot: capture a stalled publisher's stacks from the existing supervisor.
+  from openpilot.common.bluepilot import is_bluepilot
+  from openpilot.bluepilot.system.hardware_watchdog import HardwareHeartbeatBP
+  bp_heartbeat = HardwareHeartbeatBP(cloudlog.event) if is_bluepilot() else None
+  # End BluePilot
+
   threads = [
     threading.Thread(target=hw_state_thread, args=(end_event, hw_queue)),
-    threading.Thread(target=hardware_thread, args=(end_event, hw_queue)),
+    threading.Thread(target=hardware_thread, args=(end_event, hw_queue, bp_heartbeat)),  # BluePilot: diagnostic observer
   ]
 
   if COMMA_HARDWARE:
@@ -546,6 +556,10 @@ def main():
   try:
     while True:
       time.sleep(1)
+      # BluePilot: report a stall without changing process or takeover behavior.
+      if bp_heartbeat is not None:
+        bp_heartbeat.check(threads[1].ident)
+      # End BluePilot
       if not all(t.is_alive() for t in threads):
         break
   finally:
