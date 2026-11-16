@@ -12,7 +12,7 @@ from openpilot.cereal import custom
 from openpilot.common.params import Params
 
 _SETTINGS_INTERVAL = 5.0  # re-read params at most every 5 s
-_settings_last_read: float = 0.0
+_settings_last_read: float | None = None
 _settings_cache: dict = {}
 
 
@@ -119,37 +119,46 @@ def _refresh_settings_cache() -> dict:
   }
 
 
-def publish_controller_state_bp(CI, pm):
-  """Publish controllerStateBP if the car controller reports lateralUncertainty."""
+def refresh_controller_settings_bp():
+  """Called by card's existing parameter thread; never perform Params I/O on its control loop."""
   global _settings_last_read, _settings_cache
-  if hasattr(CI.CC, "lateralUncertainty"):
+  now = time.monotonic()
+  if _settings_last_read is not None and now - _settings_last_read < _SETTINGS_INTERVAL:
+    return
+  try:
+    # One assignment publishes a complete snapshot; readers retain the old dict
+    # while this thread is reading, including when a Params call blocks or fails.
+    _settings_cache = _refresh_settings_cache()
+  except Exception:
+    pass
+  _settings_last_read = now
+
+
+def publish_controller_state_bp(CI, pm):
+  """Publish the extracted lateral controller's status without changing control."""
+  status = getattr(getattr(CI.CC, "bp", None), "status", None)
+  lateral_status = status() if status is not None else CI.CC
+  if hasattr(lateral_status, "lateralUncertainty"):
     cs_bp = custom.ControllerStateBP.new_message()
-    cs_bp.lateralUncertainty = CI.CC.lateralUncertainty
-    cs_bp.angleRateLimited = getattr(CI.CC, "angleRateLimited", False)
-    cs_bp.curvatureRateLimited = getattr(CI.CC, "curvatureRateLimited", False)
-    cs_bp.curvatureDeviationLimited = getattr(CI.CC, "curvatureDeviationLimited", False)
-    cs_bp.humanTurnLateralPaused = bool(getattr(CI.CC, "humanTurnLateralPaused", False))
-    cs_bp.stallBlipActive = bool(getattr(CI.CC, "stallBlipActive", False))
+    cs_bp.lateralUncertainty = lateral_status.lateralUncertainty
+    cs_bp.angleRateLimited = getattr(lateral_status, "angleRateLimited", False)
+    cs_bp.curvatureRateLimited = getattr(lateral_status, "curvatureRateLimited", False)
+    cs_bp.curvatureDeviationLimited = getattr(lateral_status, "curvatureDeviationLimited", False)
+    cs_bp.humanTurnLateralPaused = bool(getattr(lateral_status, "humanTurnLateralPaused", False))
+    cs_bp.stallBlipActive = bool(getattr(lateral_status, "stallBlipActive", False))
     # BluePilot: mode the controller actually ran, straight off the car controller (not Params).
-    if getattr(CI.CC, "disable_BP_lat_UI", True):
+    if getattr(lateral_status, "disable_BP_lat_UI", True):
       cs_bp.activeLateralMode = custom.ControllerStateBP.LateralMode.openpilot
-    elif getattr(CI.CC, "primary_lateral_control", 0) == 1:
+    elif getattr(lateral_status, "primary_lateral_control", 0) == 1:
       cs_bp.activeLateralMode = custom.ControllerStateBP.LateralMode.angle
     else:
       cs_bp.activeLateralMode = custom.ControllerStateBP.LateralMode.curvature
 
-    # BluePilot: settings snapshot -- refreshed at most every _SETTINGS_INTERVAL s so Params
-    # reads don't add latency to every card.py tick.
-    now = time.monotonic()
-    if not _settings_cache or now - _settings_last_read >= _SETTINGS_INTERVAL:
-      try:
-        _settings_cache = _refresh_settings_cache()
-      except Exception:
-        pass
-      _settings_last_read = now
-    if _settings_cache:
-      for field, value in _settings_cache.items():
-        setattr(cs_bp, field, value)
+    # The background parameter thread publishes complete cached snapshots.
+    # No Params reads, worker startup or waits are allowed on this control path.
+    settings = _settings_cache
+    for field, value in settings.items():
+      setattr(cs_bp, field, value)
 
     # BluePilot: fingerprint info -- plain attribute reads on CarParams, no Params round-trip
     # needed, so no caching required (fingerprint never changes after startup).

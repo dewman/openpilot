@@ -243,7 +243,9 @@ class ModelState(ModelStateBase):
       desired_curvature = get_curvature_from_output(model_output, curvature_plan, v_ego, lat_action_t, self.mlsim)
     else:
       desired_accel = model_output['action'][0, 1]
-      desired_curvature = model_output['action'][0, 0] / (max(1.0, v_ego))**2
+      # BluePilot: match upstream #2091's low-speed floor for direct action outputs.
+      desired_curvature = model_output['action'][0, 0] / (max(2.5, v_ego))**2
+      # End BluePilot
     if blendful is not None:
       desired_curvature += blendful(desired_curvature)
 

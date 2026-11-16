@@ -27,7 +27,10 @@ from openpilot.sunnypilot.selfdrive.car import interfaces as sunnypilot_interfac
 # BluePilot: conditional BP message publishing (controllerStateBP, carStateBP)
 from openpilot.common.bluepilot import is_bluepilot
 if is_bluepilot():
-  from openpilot.bluepilot.selfdrive.car.bp_card_publisher import publish_controller_state_bp, publish_car_state_bp
+  from openpilot.bluepilot.selfdrive.car.bp_card_publisher import (
+    publish_controller_state_bp, publish_car_state_bp, refresh_controller_settings_bp,
+  )
+# End BluePilot
 
 REPLAY = "REPLAY" in os.environ
 
@@ -314,6 +317,11 @@ class Car:
 
       # sunnypilot
       self.v_cruise_helper.read_custom_set_speed_params()
+
+      # BluePilot: telemetry settings I/O belongs on this existing background thread.
+      if is_bluepilot():
+        refresh_controller_settings_bp()
+      # End BluePilot
 
       time.sleep(0.1)
 
