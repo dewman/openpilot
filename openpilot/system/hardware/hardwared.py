@@ -247,6 +247,11 @@ def hardware_thread(end_event, hw_queue, bp_heartbeat=None) -> None:  # BluePilo
 
   HARDWARE.initialize_hardware()
   thermal_config = HARDWARE.get_thermal_config()
+  # BluePilot: sysfs sensor reads can block for seconds; never block deviceState.
+  from openpilot.bluepilot.system.thermal_sampler import ThermalSamplerBP
+  bp_thermal = ThermalSamplerBP(thermal_config.get_msg, end_event, cloudlog.event) if bp_heartbeat is not None else None
+  bp_thermal_stale = False
+  # End BluePilot
 
   fan_controller = FanController(int(1./DT_HW))
   chestnut = Chestnut()
@@ -285,7 +290,17 @@ def hardware_thread(end_event, hw_queue, bp_heartbeat=None) -> None:  # BluePilo
       continue
 
     msg = messaging.new_message('deviceState', valid=True)
-    msg.deviceState = thermal_config.get_msg()
+    # BluePilot: keep the heartbeat alive, but never trust indefinitely stale temperatures.
+    bp_thermal_status_prev = thermal_status
+    if bp_thermal is not None:
+      temperatures, thermal_stale = bp_thermal.snapshot()
+      msg.deviceState = temperatures
+      if thermal_stale != bp_thermal_stale:
+        cloudlog.event("thermalReadStale", error=thermal_stale, stale=thermal_stale)
+        bp_thermal_stale = thermal_stale
+    else:
+      msg.deviceState = thermal_config.get_msg()
+    # End BluePilot
     msg.deviceState.deviceType = HARDWARE.get_device_type()
 
     try:
@@ -348,6 +363,14 @@ def hardware_thread(end_event, hw_queue, bp_heartbeat=None) -> None:  # BluePilo
         thermal_status = list(THERMAL_BANDS.keys())[band_idx - 1]
       elif current_band.max_temp is not None and all_comp_temp > current_band.max_temp:
         thermal_status = list(THERMAL_BANDS.keys())[band_idx + 1]
+
+    # BluePilot: missing/stale thermal data uses the existing overheat soft-disable
+    # and no-entry path, with full cooling. Do not force an offroad cycle or hide
+    # a real critical temperature; normal hysteresis resumes after fresh data.
+    if bp_thermal_stale:
+      thermal_status = max(thermal_status, bp_thermal_status_prev, ThermalStatus.overheated)
+      msg.deviceState.fanSpeedPercentDesired = 100
+    # End BluePilot
 
     # **** starting logic ****
 

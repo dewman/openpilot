@@ -3,6 +3,9 @@ from opendbc.car import Bus, create_button_events, structs
 from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.ford.fordcan import CanBus
 from opendbc.car.ford.values import DBC, CarControllerParams, FordFlags
+# BluePilot: scope the measured status-message rate to the affected F-150 platform.
+from opendbc.car.ford.values import CAR
+# End BluePilot
 from opendbc.car.interfaces import CarStateBase
 
 from opendbc.sunnypilot.car.ford.mads import MadsCarState
@@ -22,6 +25,10 @@ class CarState(CarStateBase, MadsCarState):
 
     self.distance_button = 0
     self.lc_button = 0
+    # BluePilot: expose physical SET/RESUME edges to the manual re-engagement latch.
+    self.set_button = False
+    self.resume_button = False
+    # End BluePilot
 
   def update(self, can_parsers) -> tuple[structs.CarState, structs.CarStateSP]:
     cp = can_parsers[Bus.pt]
@@ -94,6 +101,16 @@ class CarState(CarStateBase, MadsCarState):
     self.distance_button = cp.vl["Steering_Data_FD1"]["AccButtnGapTogglePress"]
     self.lc_button = bool(cp.vl["Steering_Data_FD1"]["TjaButtnOnOffPress"])
 
+    # BluePilot: retain real button edges, including a held button across a switch.
+    prev_set_button, prev_resume_button = self.set_button, self.resume_button
+    self.set_button = bool(cp.vl["Steering_Data_FD1"]["CcAslButtnSetPress"] or
+                           cp.vl["Steering_Data_FD1"]["CcAslButtnSetDecPress"] or
+                           cp.vl["Steering_Data_FD1"]["CcAslButtnSetIncPress"])
+    self.resume_button = bool(cp.vl["Steering_Data_FD1"]["CcAsllButtnResPress"] or
+                              cp.vl["Steering_Data_FD1"]["CcAslButtnResIncPress"] or
+                              cp.vl["Steering_Data_FD1"]["CcAslButtnResDecPress"])
+    # End BluePilot
+
     # lock info
     ret.doorOpen = any([cp.vl["BodyInfo_3_FD1"]["DrStatDrv_B_Actl"], cp.vl["BodyInfo_3_FD1"]["DrStatPsngr_B_Actl"],
                         cp.vl["BodyInfo_3_FD1"]["DrStatRl_B_Actl"], cp.vl["BodyInfo_3_FD1"]["DrStatRr_B_Actl"]])
@@ -117,12 +134,22 @@ class CarState(CarStateBase, MadsCarState):
     ret.buttonEvents = [
       *create_button_events(self.distance_button, prev_distance_button, {1: ButtonType.gapAdjustCruise}),
       *create_button_events(self.lc_button, prev_lc_button, {1: ButtonType.lkas}),
+      # BluePilot: standard button types already accepted by the switch interlock.
+      *create_button_events(self.set_button, prev_set_button, {1: ButtonType.setCruise}),
+      *create_button_events(self.resume_button, prev_resume_button, {1: ButtonType.resumeCruise}),
+      # End BluePilot
     ]
     return ret, ret_sp
 
   @staticmethod
   def get_can_parsers(CP, CP_SP):
+    # BluePilot: the captured F-150 startup burst is not its steady status rate.
+    camera_messages = [("IPMA_Data", 1)] if CP.carFingerprint == CAR.FORD_F_150_MK14 else []
+    # End BluePilot
     return {
       Bus.pt: CANParser(DBC[CP.carFingerprint][Bus.pt], [], CanBus(CP).main),
-      Bus.cam: CANParser(DBC[CP.carFingerprint][Bus.pt], [], CanBus(CP).camera),
+      # BluePilot: IPMA status settles to 1 Hz after startup bursts. Learning its
+      # rate from that burst creates a sub-second timeout and false CAN errors.
+      Bus.cam: CANParser(DBC[CP.carFingerprint][Bus.pt], camera_messages, CanBus(CP).camera),
+      # End BluePilot
     }

@@ -631,6 +631,9 @@ class SelfdriveD:
     ss_msg = messaging.new_message('selfdriveState')
     ss_msg.valid = True
     ss = ss_msg.selfdriveState
+    # BluePilot: output publication time cannot acknowledge an unseen carState.
+    ss.bpCarStateMonoTime = self.bp_model_switch.car_state_mono_time if self.bp_model_switch is not None else 0
+    # End BluePilot
     ss.enabled = self.enabled
     ss.active = self.active
     ss.state = self.state_machine.state

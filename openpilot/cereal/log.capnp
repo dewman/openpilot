@@ -810,6 +810,9 @@ struct ExtrinsicsCalibration @0x96df70754d8390bc {
 }
 
 struct SelfdriveState {
+  # BluePilot: input sample used for this decision, atomic with enabled/state.
+  bpCarStateMonoTime @14 :UInt64;
+  # End BluePilot
   # high level system state
   state @0 :OpenpilotState;
   enabled @1 :Bool;

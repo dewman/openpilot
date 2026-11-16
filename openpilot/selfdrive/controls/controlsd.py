@@ -189,11 +189,12 @@ class Controls(ControlsExt):
 
     CC.cruiseControl.override = CC.enabled and not CC.longActive and (self.CP.openpilotLongitudinalControl or not self.CP_SP.pcmCruiseSpeed)
     CC.cruiseControl.cancel = CS.cruiseState.enabled and (not CC.enabled or not self.CP.pcmCruise)
-    # BluePilot: do not cancel SET using selfdrived's older, pre-engagement snapshot.
+    # BluePilot: acknowledge the processed car sample, not selfdrived's output time.
     if self.bp_cruise_cancel is not None:
       CC.cruiseControl.cancel = self.bp_cruise_cancel.update(
         CC.cruiseControl.cancel, CS, self.sm.logMonoTime['carState'], self.sm.logMonoTime['selfdriveState'],
-        time.monotonic_ns(), self.sm.valid['carState'] and self.sm.valid['selfdriveState'] and CS.canValid and not CS.canTimeout)
+        time.monotonic_ns(), self.sm.valid['carState'] and self.sm.valid['selfdriveState'] and CS.canValid and not CS.canTimeout,
+        self.sm['selfdriveState'].bpCarStateMonoTime)
     # End BluePilot
     CC.cruiseControl.resume = CC.enabled and CS.cruiseState.standstill and not self.sm['longitudinalPlan'].shouldStop
 
