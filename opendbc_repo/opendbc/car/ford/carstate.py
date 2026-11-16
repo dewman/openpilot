@@ -28,6 +28,9 @@ class CarState(CarStateBase, MadsCarState):
     # BluePilot: expose physical SET/RESUME edges to the manual re-engagement latch.
     self.set_button = False
     self.resume_button = False
+    self.cancel_button = False
+    self.cancel_resume_button = False
+    self.cancel_resume_type = None
     # End BluePilot
 
   def update(self, can_parsers) -> tuple[structs.CarState, structs.CarStateSP]:
@@ -103,12 +106,23 @@ class CarState(CarStateBase, MadsCarState):
 
     # BluePilot: retain real button edges, including a held button across a switch.
     prev_set_button, prev_resume_button = self.set_button, self.resume_button
+    prev_cancel_button = self.cancel_button
+    # Classify the shared button once per physical press. Cruise can change
+    # while it is held; that must not turn Cancel into a fresh Resume event.
+    cancel_resume = bool(cp.vl["Steering_Data_FD1"]["CcAslButtnCnclResPress"])
+    if cancel_resume and not self.cancel_resume_button:
+      self.cancel_resume_type = ButtonType.cancel if ret.cruiseState.enabled else ButtonType.resumeCruise
+    elif not cancel_resume:
+      self.cancel_resume_type = None
+    self.cancel_resume_button = cancel_resume
+    self.cancel_button = cancel_resume and self.cancel_resume_type == ButtonType.cancel
     self.set_button = bool(cp.vl["Steering_Data_FD1"]["CcAslButtnSetPress"] or
                            cp.vl["Steering_Data_FD1"]["CcAslButtnSetDecPress"] or
                            cp.vl["Steering_Data_FD1"]["CcAslButtnSetIncPress"])
     self.resume_button = bool(cp.vl["Steering_Data_FD1"]["CcAsllButtnResPress"] or
                               cp.vl["Steering_Data_FD1"]["CcAslButtnResIncPress"] or
-                              cp.vl["Steering_Data_FD1"]["CcAslButtnResDecPress"])
+                              cp.vl["Steering_Data_FD1"]["CcAslButtnResDecPress"] or
+                              (cancel_resume and self.cancel_resume_type == ButtonType.resumeCruise))
     # End BluePilot
 
     # lock info
@@ -137,6 +151,7 @@ class CarState(CarStateBase, MadsCarState):
       # BluePilot: standard button types already accepted by the switch interlock.
       *create_button_events(self.set_button, prev_set_button, {1: ButtonType.setCruise}),
       *create_button_events(self.resume_button, prev_resume_button, {1: ButtonType.resumeCruise}),
+      *create_button_events(self.cancel_button, prev_cancel_button, {1: ButtonType.cancel}),
       # End BluePilot
     ]
     return ret, ret_sp
