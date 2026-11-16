@@ -6,6 +6,7 @@ card.py only needs a single function call instead of inline BP blocks.
 """
 
 import time
+from typing import NamedTuple
 
 import openpilot.cereal.messaging as messaging
 from openpilot.cereal import custom
@@ -120,7 +121,7 @@ def _refresh_settings_cache() -> dict:
 
 
 def refresh_controller_settings_bp():
-  """Called by card's existing parameter thread; never perform Params I/O on its control loop."""
+  """Refresh settings in the telemetry process, never on the control loop."""
   global _settings_last_read, _settings_cache
   now = time.monotonic()
   if _settings_last_read is not None and now - _settings_last_read < _SETTINGS_INTERVAL:
@@ -134,10 +135,47 @@ def refresh_controller_settings_bp():
   _settings_last_read = now
 
 
-def publish_controller_state_bp(CI, pm):
-  """Publish the extracted lateral controller's status without changing control."""
+class ControllerSnapshotBP(NamedTuple):
+  lateralUncertainty: float
+  angleRateLimited: bool
+  curvatureRateLimited: bool
+  curvatureDeviationLimited: bool
+  humanTurnLateralPaused: bool
+  stallBlipActive: bool
+  disable_BP_lat_UI: bool
+  primary_lateral_control: int
+  fingerprint_forced: bool
+  fingerprint: str
+
+
+def capture_controller_state_bp(CI):
+  """Copy only scalar values on the control thread; never hand the worker CI/CC."""
   status = getattr(getattr(CI.CC, "bp", None), "status", None)
   lateral_status = status() if status is not None else CI.CC
+  if not hasattr(lateral_status, "lateralUncertainty"):
+    return None
+  cp = getattr(CI, 'CP', None)
+  return ControllerSnapshotBP(
+    lateral_status.lateralUncertainty,
+    bool(getattr(lateral_status, 'angleRateLimited', False)),
+    bool(getattr(lateral_status, 'curvatureRateLimited', False)),
+    bool(getattr(lateral_status, 'curvatureDeviationLimited', False)),
+    bool(getattr(lateral_status, 'humanTurnLateralPaused', False)),
+    bool(getattr(lateral_status, 'stallBlipActive', False)),
+    bool(getattr(lateral_status, 'disable_BP_lat_UI', True)),
+    int(getattr(lateral_status, 'primary_lateral_control', 0)),
+    getattr(cp, 'fingerprintSource', None) == 'fixed',
+    str(getattr(cp, 'carFingerprint', '') or ''),
+  )
+
+
+def publish_controller_state_bp(CI, pm):
+  """Synchronous adapter for offline callers; card uses the worker below."""
+  publish_controller_snapshot_bp(capture_controller_state_bp(CI), pm)
+
+
+def publish_controller_snapshot_bp(lateral_status, pm, mono_time=None):
+  """Serialize a detached snapshot on the telemetry worker."""
   if hasattr(lateral_status, "lateralUncertainty"):
     cs_bp = custom.ControllerStateBP.new_message()
     cs_bp.lateralUncertainty = lateral_status.lateralUncertainty
@@ -154,21 +192,19 @@ def publish_controller_state_bp(CI, pm):
     else:
       cs_bp.activeLateralMode = custom.ControllerStateBP.LateralMode.curvature
 
-    # The background parameter thread publishes complete cached snapshots.
-    # No Params reads, worker startup or waits are allowed on this control path.
+    # Settings are cached in the telemetry process.
     settings = _settings_cache
     for field, value in settings.items():
       setattr(cs_bp, field, value)
 
-    # BluePilot: fingerprint info -- plain attribute reads on CarParams, no Params round-trip
-    # needed, so no caching required (fingerprint never changes after startup).
-    CP = getattr(CI, "CP", None)
-    if CP is not None:
-      cs_bp.bmsFingerprintForced = bool(getattr(CP, "fingerprintSource", None) == "fixed")
-      cs_bp.bmsFingerprint = str(getattr(CP, "carFingerprint", "") or "")
+    # BluePilot: fingerprint is fixed at process startup, with no live CI/CP access.
+    cs_bp.bmsFingerprintForced = lateral_status.fingerprint_forced
+    cs_bp.bmsFingerprint = lateral_status.fingerprint
 
     cs_bp_send = messaging.new_message('controllerStateBP')
     cs_bp_send.valid = True
+    if mono_time is not None:
+      cs_bp_send.logMonoTime = mono_time
     cs_bp_send.controllerStateBP = cs_bp
     pm.send('controllerStateBP', cs_bp_send)
 

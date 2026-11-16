@@ -28,8 +28,9 @@ from openpilot.sunnypilot.selfdrive.car import interfaces as sunnypilot_interfac
 from openpilot.common.bluepilot import is_bluepilot
 if is_bluepilot():
   from openpilot.bluepilot.selfdrive.car.bp_card_publisher import (
-    publish_controller_state_bp, publish_car_state_bp, refresh_controller_settings_bp,
+    publish_car_state_bp,
   )
+  from openpilot.bluepilot.selfdrive.car.controller_telemetry import ControllerTelemetryBP, configure_background_thread_bp
 # End BluePilot
 
 REPLAY = "REPLAY" in os.environ
@@ -79,8 +80,10 @@ class Car:
   def __init__(self, CI=None, RI=None) -> None:
     self.can_sock = messaging.sub_sock('can', timeout=20)
     self.sm = messaging.SubMaster(['pandaStates', 'carControl', 'onroadEvents'] + ['carControlSP', 'longitudinalPlanSP'])
-    # BluePilot: added controllerStateBP, carStateBP to PubMaster
-    self.pm = messaging.PubMaster(['sendcan', 'carState', 'carParams', 'carOutput', 'radarTracks'] + ['carParamsSP', 'carStateSP', 'controllerStateBP', 'carStateBP'])
+    # BluePilot: controllerStateBP has its own background publisher; retain carStateBP here.
+    self.pm = messaging.PubMaster(['sendcan', 'carState', 'carParams', 'carOutput', 'radarTracks'] + ['carParamsSP', 'carStateSP', 'carStateBP'])
+    self.bp_telemetry = ControllerTelemetryBP() if is_bluepilot() else None
+    # End BluePilot
 
     self.can_rcv_cum_timeout_counter = 0
 
@@ -291,9 +294,10 @@ class Car:
 
       self.CC_prev = CC
 
-    # BluePilot: publish lateral uncertainty for angleState vehicles (controllerStateBP)
-    if is_bluepilot():
-      publish_controller_state_bp(self.CI, self.pm)
+    # BluePilot: only copy status here; serialize and send outside the control core.
+    if self.bp_telemetry is not None:
+      self.bp_telemetry.submit(self.CI)
+    # End BluePilot
 
 
   def step(self):
@@ -311,17 +315,22 @@ class Car:
     self.CS_SP_prev = CS_SP
 
   def params_thread(self, evt):
+    # BluePilot: Python threads inherit CPU 4 and SCHED_FIFO from card. Move the
+    # settings reader before its first I/O; thread creation alone does not isolate it.
+    if is_bluepilot():
+      configure_background_thread_bp()
+      if self.bp_telemetry is not None:
+        try:
+          self.bp_telemetry.start(self.CP)
+        except Exception:
+          cloudlog.exception('BP telemetry startup failed; continuing settings reader')
+    # End BluePilot
     while not evt.is_set():
       self.is_metric = self.params.get_bool("IsMetric")
       self.initial_cruise_speed = self.params.get("InitialCruiseSpeedKph", return_default=True)
 
       # sunnypilot
       self.v_cruise_helper.read_custom_set_speed_params()
-
-      # BluePilot: telemetry settings I/O belongs on this existing background thread.
-      if is_bluepilot():
-        refresh_controller_settings_bp()
-      # End BluePilot
 
       time.sleep(0.1)
 
@@ -336,6 +345,10 @@ class Car:
     finally:
       e.set()
       t.join()
+      # BluePilot: finish startup before bounded telemetry shutdown.
+      if self.bp_telemetry is not None:
+        self.bp_telemetry.close()
+      # End BluePilot
 
 
 def main():
