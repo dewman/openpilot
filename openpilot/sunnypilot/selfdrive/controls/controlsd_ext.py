@@ -19,6 +19,11 @@ from openpilot.sunnypilot.selfdrive.controls.lib.blinker_pause_lateral import Bl
 from openpilot.sunnypilot.selfdrive.controls.lib.latcontrol_torque_v0 import LatControlTorque as LatControlTorqueV0
 
 
+# BluePilot: port #248's settings cache without changing this fork's parameter list.
+BP_PARAMS_REFRESH_PERIOD = 0.5  # seconds
+# End BluePilot
+
+
 class ControlsExt(ModelStateBase):
   def __init__(self, CP: structs.CarParams, params: Params):
     ModelStateBase.__init__(self)
@@ -109,17 +114,28 @@ class ControlsExt(ModelStateBase):
     # lateralInputsRequired for every Ford); other cars leave them empty
     if self.CP_SP.lateralInputsRequired:
       self.fill_lateral_inputs(CC_SP.lateralInputs, sm)
-      CC_SP.params = self.read_lateral_params()
+      CC_SP.params = self.published_params()
 
     return CC_SP
+
+  # BluePilot: #248 avoids repeated Params I/O on the 100 Hz control loop. Live
+  # lateral inputs above still update every frame; only menu settings are cached.
+  def published_params(self) -> list[dict]:
+    """Read the existing settings immediately, then at most once every 0.5 s."""
+    now = time.monotonic()
+    cached = getattr(self, "_bp_params_cache", None)
+    if cached is None or now - getattr(self, "_bp_params_cache_time", 0.0) > BP_PARAMS_REFRESH_PERIOD:
+      cached = self.read_lateral_params()
+      self._bp_params_cache = cached
+      self._bp_params_cache_time = now
+    return cached
+  # End BluePilot
 
   def read_lateral_params(self) -> list[dict]:
     """BluePilot: lateral tuning and Ford HUD preference as CarControlSP.params entries.
     A key never written on the device publishes its params_keys.h default, so the lateral runs
-    the value the settings UI shows (#6 in ford-op/bg-opendbc). Read every frame, as carcontroller did
-    before, so a UI change (disable_BP_lat_UI in particular) still lands on the next frame.
-    ponytail: ~18 Params reads per 10 ms, the same cost card paid; throttle here if it ever
-    shows in controlsd timing."""
+    the value the settings UI shows (#6 in ford-op/bg-opendbc). Call through published_params()
+    to cache these settings for 0.5 s, including the lateral bypass and Ford HUD preference."""
     # imported here, not at module level: the key list lives in the opendbc submodule and only
     # Ford needs it, so a submodule on another layout must not break controlsd for other brands
     from opendbc.bluepilot_lateral.core.values_ext import BP_LATERAL_PARAMS
